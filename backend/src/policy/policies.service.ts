@@ -5,12 +5,18 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
+import { addMonths, startOfDay, endOfDay } from 'date-fns';
+import { Between } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { PolicyEntity } from './entities/policy.entity';
 import { Repository } from 'typeorm';
 import { CreatePolicyDto } from './dto/create-policy.dto';
 import { UpdatePolicyDto } from './dto/update-policy.dto';
 import { UsersEntity } from 'src/auth/entities/users.entity';
+import { addYears } from 'date-fns';
+import { NotificationsService } from 'src/notifications/notifications.service';
+import { WhatsappService } from 'src/whatsapp/whatsapp.service';
 
 @Injectable()
 export class PoliciesService {
@@ -22,7 +28,92 @@ export class PoliciesService {
 
     @InjectRepository(UsersEntity)
     private readonly userRepository: Repository<UsersEntity>,
+    private readonly notificationsService: NotificationsService,
+    private readonly whatsappService: WhatsappService,
   ) {}
+
+  @Cron('0 8 * * *') // todos los días 8am
+  async verificarPolizasPorVencer() {
+    this.logger.log('🕐 Verificando pólizas por vencer');
+
+    const hoy = startOfDay(new Date());
+    const enUnMes = endOfDay(addMonths(new Date(), 1));
+
+    const polizas = await this.policyRepository.find({
+      where: {
+        fin_vigencia: Between(hoy, enUnMes),
+        notificada: false,
+      },
+      relations: ['user'],
+    });
+
+    this.logger.log(`📄 Pólizas encontradas: ${polizas.length}`);
+
+    for (const poliza of polizas) {
+      this.logger.log(`🔔 Avisando póliza ${poliza.policy_number}`);
+      await this.enviarAvisos(poliza);
+    }
+  }
+
+  async enviarAvisos(policy: PolicyEntity) {
+    const mensaje = `
+Hola ${policy.user.user_name},
+Tu póliza ${policy.policy_number} vence el ${policy.fin_vigencia}.
+Comunícate con Seguros MAB para renovarla.
+`;
+
+    // 📧 Email usuario
+    try {
+      if (policy.user.email) {
+        await this.notificationsService.enviarCorreo(
+          policy.user.email,
+          mensaje,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `❌ Error enviando email a usuario (${policy.user.email})`,
+        error,
+      );
+    }
+
+    // 📧 Email admin
+    try {
+      if (process.env.ADMIN_EMAIL) {
+        await this.notificationsService.enviarCorreo(
+          process.env.ADMIN_EMAIL,
+          mensaje,
+        );
+      }
+    } catch (error) {
+      this.logger.error('❌ Error enviando email al admin', error);
+    }
+
+    // 📲 WhatsApp usuario
+    try {
+      if (policy.user.telefono) {
+        await this.whatsappService.enviar(policy.user.telefono, mensaje);
+      }
+    } catch (error) {
+      this.logger.error(
+        `❌ Error WhatsApp usuario (${policy.user.telefono})`,
+        error,
+      );
+    }
+
+    // 📲 WhatsApp admin
+    try {
+      if (process.env.ADMIN_PHONE) {
+        await this.whatsappService.enviar(process.env.ADMIN_PHONE, mensaje);
+      }
+    } catch (error) {
+      this.logger.error('❌ Error WhatsApp admin', error);
+    }
+
+    // 🔐 Marcar como notificada SOLO si pasó por aquí
+    policy.notificada = true;
+    await this.policyRepository.save(policy);
+  }
 
   async create(dto: CreatePolicyDto) {
     try {
@@ -30,10 +121,15 @@ export class PoliciesService {
       if (!user)
         throw new NotFoundException(`User with id ${dto.user_id} not found`);
 
-      const { user_id, ...rest } = dto;
+      const { user_id, inicio_vigencia, ...rest } = dto;
+
+      const inicio = new Date(inicio_vigencia);
+      const fin = addYears(inicio, 1); // 🔥 1 año automático
 
       const policy = this.policyRepository.create({
         ...rest,
+        inicio_vigencia: inicio,
+        fin_vigencia: fin,
         user,
       });
 
@@ -103,8 +199,13 @@ export class PoliciesService {
   }
 
   async update(id_policy: number, dto: UpdatePolicyDto) {
+    console.log('DTO RECIBIDO EN UPDATE:', dto);
     try {
-      const { user_id, ...rest } = dto as any;
+      const { user_id, fin_vigencia, ...rest } = dto as any;
+
+      if (fin_vigencia) {
+        rest.fin_vigencia = new Date(fin_vigencia);
+      }
 
       // 🔥 preload usando id_policy
       const policy = await this.policyRepository.preload({

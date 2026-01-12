@@ -113,42 +113,59 @@ export default function PolicyForm({ mode }: { mode: Mode }) {
     if (!form.policy_number) e.policy_number = "No. de póliza requerido";
     if (!form.tipo_poliza) e.tipo_poliza = "Tipo de póliza requerido";
     if (!form.inicio_vigencia) e.inicio_vigencia = "Fecha inicio requerida";
-    if (!form.fin_vigencia) e.fin_vigencia = "Fecha fin requerida";
+    if (!isCreate && !form.fin_vigencia) {
+      e.fin_vigencia = "Fecha fin requerida";
+    }
+
     if (!form.user_id) e.user_id = "Tomador (user_id) requerido";
     return e;
   };
 
-  const preparePayload = () => {
-    const payload: any = {
-      policy_number: form.policy_number,
-      tipo_poliza: form.tipo_poliza,
-      inicio_vigencia: form.inicio_vigencia,
-      fin_vigencia: form.fin_vigencia,
-      tipo_riesgo: form.tipo_riesgo || null,
-      compania_seguros: form.compania_seguros || null,
-      telefono_asistencia: form.telefono_asistencia || null,
-      valor_asegurado: form.valor_asegurado ? Number(form.valor_asegurado) : null,
-      user_id: form.user_id ? Number(form.user_id) : undefined, // DTO espera user_id
-    };
-
-    if (isAuto) {
-      payload.cod_fasecolda = form.cod_fasecolda || null;
-      payload.placa = form.placa || null;
-      payload.tonelaje_cilindraje_pasajeros = form.tonelaje_cilindraje_pasajeros || null;
-      payload.departamento_municipio = form.departamento_municipio || null;
-      payload.valor_comercial = form.valor_comercial ? Number(form.valor_comercial) : null;
-      payload.valor_accesorios = form.valor_accesorios ? Number(form.valor_accesorios) : null;
-      payload.valor_total_comercial = form.valor_total_comercial ? Number(form.valor_total_comercial) : null;
-      payload.modelo = form.modelo || null;
-      payload.servicio = form.servicio || null;
-      payload.tipo_vehiculo = form.tipo_vehiculo || null;
-      payload.numero_motor = form.numero_motor || null;
-      payload.numero_chasis = form.numero_chasis || null;
-      payload.beneficiario = form.beneficiario || null;
-    }
-
-    return payload;
+const preparePayload = () => {
+  const payload: any = {
+    policy_number: form.policy_number,
+    tipo_poliza: form.tipo_poliza,
+    inicio_vigencia: form.inicio_vigencia,
+    tipo_riesgo: form.tipo_riesgo || null,
+    compania_seguros: form.compania_seguros || null,
+    telefono_asistencia: form.telefono_asistencia || null,
+    valor_asegurado: form.valor_asegurado
+      ? Number(form.valor_asegurado)
+      : null,
+    user_id: Number(form.user_id),
   };
+
+  // ✅ SOLO EN UPDATE
+  if (!isCreate && form.fin_vigencia) {
+    payload.fin_vigencia = form.fin_vigencia;
+  }
+
+  if (isAuto) {
+    payload.cod_fasecolda = form.cod_fasecolda || null;
+    payload.placa = form.placa || null;
+    payload.tonelaje_cilindraje_pasajeros =
+      form.tonelaje_cilindraje_pasajeros || null;
+    payload.departamento_municipio =
+      form.departamento_municipio || null;
+    payload.valor_comercial = form.valor_comercial
+      ? Number(form.valor_comercial)
+      : null;
+    payload.valor_accesorios = form.valor_accesorios
+      ? Number(form.valor_accesorios)
+      : null;
+    payload.valor_total_comercial = form.valor_total_comercial
+      ? Number(form.valor_total_comercial)
+      : null;
+    payload.modelo = form.modelo || null;
+    payload.servicio = form.servicio || null;
+    payload.tipo_vehiculo = form.tipo_vehiculo || null;
+    payload.numero_motor = form.numero_motor || null;
+    payload.numero_chasis = form.numero_chasis || null;
+    payload.beneficiario = form.beneficiario || null;
+  }
+
+  return payload;
+};
 
   const handleCreate = async () => {
     const e = validate();

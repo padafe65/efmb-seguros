@@ -47,6 +47,8 @@ localStorage.setItem("rol", payload.roles[0]);
       navigate("/dashboard-user", { replace: true });
     } else if (rol === "admin") {
       navigate("/dashboard-admin", { replace: true });
+    } else if (rol === "super_user") {
+      navigate("/dashboard-super", { replace: true });
     } else {
       setMensaje("Rol desconocido");
     }
@@ -88,6 +90,19 @@ localStorage.setItem("rol", payload.roles[0]);
           {mensaje && (
             <p style={{ color: "red", marginTop: "10px" }}>{mensaje}</p>
           )}
+
+          <div style={{ marginTop: "15px", textAlign: "center" }}>
+            <Link 
+              to="/forgot-password" 
+              style={{ 
+                color: "#0984e3", 
+                textDecoration: "none",
+                fontSize: "14px"
+              }}
+            >
+              ¿Olvidaste tu contraseña?
+            </Link>
+          </div>
 
         </form>
       </FlipFormCard>

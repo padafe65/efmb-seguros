@@ -1,7 +1,7 @@
+// src/policy/dto/create-policy.dto.ts
 import { Type } from 'class-transformer';
 import {
   IsDate,
-  IsEnum,
   IsNumber,
   IsOptional,
   IsPositive,
@@ -22,9 +22,7 @@ export class CreatePolicyDto {
   @IsDate()
   inicio_vigencia: Date;
 
-  @Type(() => Date)
-  @IsDate()
-  fin_vigencia: Date;
+  // ❌ NO fin_vigencia (se calcula en el service)
 
   @IsOptional()
   @IsString()
@@ -43,12 +41,12 @@ export class CreatePolicyDto {
   @IsPositive()
   valor_asegurado?: number;
 
-  // campo que relaciona la póliza con el usuario (tomador)
+  // relación con usuario
   @IsNumber()
   @Type(() => Number)
   user_id: number;
 
-  // ---------- Opcionales para vehículos ----------
+  // ---------- Vehículos ----------
   @IsOptional()
   @IsString()
   cod_fasecolda?: string;

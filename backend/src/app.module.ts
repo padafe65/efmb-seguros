@@ -4,10 +4,14 @@ import { ConfigModule } from '@nestjs/config';
 import { CommonModule } from './common/common.module';
 import { PoliciesModule } from './policy/policies.module';
 import { AuthModule } from './auth/auth.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { NotificationsModule } from './notifications/notifications.module';
+import { WhatsappModule } from './whatsapp/whatsapp.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot(),
+    ScheduleModule.forRoot(), // 👈 ACTIVA CRON
 
     TypeOrmModule.forRoot({
       type: 'postgres',
@@ -22,6 +26,8 @@ import { AuthModule } from './auth/auth.module';
     CommonModule,
     PoliciesModule,
     AuthModule,
+    NotificationsModule,
+    WhatsappModule,
   ],
   controllers: [],
   providers: [],

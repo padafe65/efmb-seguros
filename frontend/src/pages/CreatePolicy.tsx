@@ -14,6 +14,8 @@ export default function CreatePolicy(props: CreatePolicyProps): JSX.Element {
   const { mode = "create" } = props;
   const isView = mode === "view";
   const isEdit = mode === "edit";
+  const isCreate = mode === "create";
+
 
   const [loading, setLoading] = useState(true);
 
@@ -90,59 +92,125 @@ export default function CreatePolicy(props: CreatePolicyProps): JSX.Element {
     setForm((s: any) => ({ ...s, [name]: value }));
   };
 
+  useEffect(() => {
+  // Solo aplica a AUTOS
+  if (productType !== "autos") return;
+
+  const vc = Number(form.valor_comercial) || 0;
+  const va = Number(form.valor_accesorios) || 0;
+
+  const total = vc + va;
+
+  setForm((s: any) => ({
+    ...s,
+    valor_total_comercial: total > 0 ? total : "",
+  }));
+}, [form.valor_comercial, form.valor_accesorios, productType]);
+
+useEffect(() => {
+  if (!form.inicio_vigencia) return;
+
+  // inicio_vigencia viene como YYYY-MM-DD
+  const inicio = new Date(form.inicio_vigencia);
+
+  if (isNaN(inicio.getTime())) return;
+
+  const fin = new Date(inicio);
+  fin.setFullYear(fin.getFullYear() + 1);
+
+  // Formatear a YYYY-MM-DD (input date)
+  const yyyy = fin.getFullYear();
+  const mm = String(fin.getMonth() + 1).padStart(2, "0");
+  const dd = String(fin.getDate()).padStart(2, "0");
+
+  const finFormatted = `${yyyy}-${mm}-${dd}`;
+
+  setForm((s: any) => ({
+    ...s,
+    fin_vigencia: finFormatted,
+  }));
+}, [form.inicio_vigencia]);
+
+
+
   // -------------------------------------------------------
   // SUBMIT
   // -------------------------------------------------------
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-    const payload: any = {
-      ...form,
-      user_id: Number(form.user_id),
+  const payload: any = {
+    ...form,
+    user_id: Number(form.user_id),
 
-      valor_asegurado: form.valor_asegurado ? Number(form.valor_asegurado) : null,
-      valor_comercial: form.valor_comercial ? Number(form.valor_comercial) : null,
-      valor_accesorios: form.valor_accesorios ? Number(form.valor_accesorios) : null,
-      valor_total_comercial: form.valor_total_comercial
-        ? Number(form.valor_total_comercial)
-        : null,
-    };
+    valor_asegurado: form.valor_asegurado
+      ? Number(form.valor_asegurado)
+      : undefined,
 
-    // ❗ remover campos innecesarios enviados al backend
-    delete payload.user; // relación
-    delete payload.id_policy; // ⚠ causa el error "should not exist"
+    valor_comercial: form.valor_comercial
+      ? Number(form.valor_comercial)
+      : undefined,
 
-    if (productType === "productos") {
-      delete payload.cod_fasecolda;
-      delete payload.placa;
-      delete payload.tonelaje_cilindraje_pasajeros;
-      delete payload.departamento_municipio;
-      delete payload.valor_comercial;
-      delete payload.valor_accesorios;
-      delete payload.valor_total_comercial;
-      delete payload.modelo;
-      delete payload.servicio;
-      delete payload.tipo_vehiculo;
-      delete payload.numero_motor;
-      delete payload.numero_chasis;
-      delete payload.beneficiario;
-    }
+    valor_accesorios: form.valor_accesorios
+      ? Number(form.valor_accesorios)
+      : undefined,
 
-    try {
-      if (isEdit) {
-        await API.patch(`/policies/${id_policy}`, payload);
-        alert("Póliza actualizada!");
-      } else {
-        await API.post("/policies/create", payload);
-        alert("Póliza creada!");
-      }
-
-      navigate("/dashboard-admin");
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.response?.data?.message || "Error al guardar la póliza");
-    }
+    valor_total_comercial: form.valor_total_comercial
+      ? Number(form.valor_total_comercial)
+      : undefined,
   };
+
+  // 🔥 ELIMINAR VACÍOS (string, null, undefined)
+  Object.keys(payload).forEach((key) => {
+    if (
+      payload[key] === "" ||
+      payload[key] === null ||
+      payload[key] === undefined
+    ) {
+      delete payload[key];
+    }
+  });
+
+  // ❌ campos que ROMPEN el DTO
+  delete payload.user;
+  delete payload.id_policy;
+  delete payload.fin_vigencia; // 🔥 SIEMPRE
+  delete payload.notificada;
+
+  if (productType === "productos") {
+    delete payload.cod_fasecolda;
+    delete payload.placa;
+    delete payload.tonelaje_cilindraje_pasajeros;
+    delete payload.departamento_municipio;
+    delete payload.valor_comercial;
+    delete payload.valor_accesorios;
+    delete payload.valor_total_comercial;
+    delete payload.modelo;
+    delete payload.servicio;
+    delete payload.tipo_vehiculo;
+    delete payload.numero_motor;
+    delete payload.numero_chasis;
+    delete payload.beneficiario;
+  }
+
+  console.log("🟦 PAYLOAD FINAL PATCH:", payload);
+
+  try {
+    if (isEdit) {
+      await API.patch(`/policies/${id_policy}`, payload);
+      alert("Póliza actualizada!");
+    } else {
+      await API.post("/policies/create", payload);
+      alert("Póliza creada!");
+    }
+
+    navigate("/dashboard-admin");
+  } catch (err: any) {
+    console.error(err);
+    alert(err?.response?.data?.message || "Error al guardar la póliza");
+  }
+};
+
 
   if (loading) return <p>Cargando...</p>;
 
@@ -185,14 +253,26 @@ export default function CreatePolicy(props: CreatePolicyProps): JSX.Element {
           onChange={handleChange}
         />
 
-        <label>Fin vigencia</label>
         <input
           type="date"
           name="fin_vigencia"
-          disabled={isView}
           value={form.fin_vigencia}
-          onChange={handleChange}
+          disabled
         />
+
+
+        {!isCreate && (
+          <>
+            <label>Fin vigencia</label>
+            <input
+              type="date"
+              name="fin_vigencia"
+              disabled
+              value={form.fin_vigencia}
+            />
+          </>
+        )}
+
 
         <label>Tipo de cliente</label>
         <select
@@ -295,10 +375,10 @@ export default function CreatePolicy(props: CreatePolicyProps): JSX.Element {
             <input
               type="number"
               name="valor_total_comercial"
-              disabled={isView}
               value={form.valor_total_comercial}
-              onChange={handleChange}
+              disabled
             />
+
 
             <label>Modelo</label>
             <input

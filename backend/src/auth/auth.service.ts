@@ -186,6 +186,64 @@ export class AuthService {
     }
   }
 
+  /**
+   * Actualiza los roles de un usuario (solo super_user puede hacerlo)
+   */
+  async updateUserRoles(userId: number, roles: string[]) {
+    const user = await this.UsersRepository.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException(`User with id ${userId} not found`);
+
+    // Validar que los roles sean válidos
+    const validRoles = ['user', 'admin', 'super_user'];
+    const rolesInvalidos = roles.filter(r => !validRoles.includes(r));
+    if (rolesInvalidos.length > 0) {
+      throw new BadRequestException(`Roles inválidos: ${rolesInvalidos.join(', ')}`);
+    }
+
+    user.roles = roles as any;
+    await this.UsersRepository.save(user);
+
+    const { user_password, ...rest } = user as any;
+    return {
+      message: 'Roles actualizados correctamente',
+      user: rest,
+    };
+  }
+
+  /**
+   * Resetea la contraseña de un usuario por email (sin autenticación)
+   * Permite cambiar la contraseña directamente con email y nueva contraseña
+   */
+  async resetPasswordByEmail(email: string, newPassword: string) {
+    const user = await this.UsersRepository.findOne({ where: { email } });
+    
+    if (!user) {
+      throw new NotFoundException(`Usuario con email ${email} no encontrado`);
+    }
+
+    // Validar que la nueva contraseña tenga al menos 4 caracteres
+    if (!newPassword || newPassword.length < 4) {
+      throw new BadRequestException('La contraseña debe tener al menos 4 caracteres');
+    }
+
+    // Hashear la nueva contraseña
+    const hashedPassword = bcrypt.hashSync(
+      newPassword,
+      Number(this.configService.get('SALT_ROUNDS_DEV') || 10),
+    );
+
+    // Actualizar la contraseña
+    user.user_password = hashedPassword;
+    await this.UsersRepository.save(user);
+
+    this.logger.log(`✅ Contraseña actualizada para usuario: ${email}`);
+
+    return {
+      message: 'Contraseña actualizada correctamente',
+      email: user.email,
+    };
+  }
+
   private handlerErrors(error: any) {
     if (error && error.code === '23505') {
       throw new BadRequestException(error.detail);

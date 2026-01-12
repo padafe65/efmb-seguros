@@ -39,7 +39,24 @@ export default function UpdatePolicy(): JSX.Element {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await API.patch(`/policies/${id}`, form);
+      const payload = {
+        ...form,
+        user_id: Number(form.user_id),
+      };
+
+      Object.keys(payload).forEach((k) => {
+        if (payload[k] === "" || payload[k] === undefined) {
+          delete payload[k];
+        }
+      });
+
+      delete payload.user;
+      delete payload.id_policy;
+      delete payload.notificada;
+
+
+      await API.patch(`/policies/${id}`, payload);
+
       alert("Póliza actualizada");
       navigate("/dashboard-admin");
     } catch (err: any) {

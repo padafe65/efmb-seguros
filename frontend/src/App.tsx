@@ -5,13 +5,16 @@ import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register"; // ahora sirve como CreateUser / EditUser
 import CreatePolicy from "./pages/CreatePolicy";
+import ForgotPassword from "./pages/ForgotPassword";
 
 import DashboardAdmin from "./pages/DashboardAdmin";
 import DashboardUser from "./pages/DashboardUser";
+import DashboardSuperUser from "./pages/DashboardSuperUser";
 
 import ProtectedRoute from "./routes/ProtectedRoute";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
+import ChatWidget from "./components/ChatWidget";
 
 export default function App() {
   return (
@@ -23,13 +26,23 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/registrar" element={<Register />} />
 
             <Route
               path="/dashboard-admin"
               element={
-                <ProtectedRoute allowed={["admin", "super_user"]}>
+                <ProtectedRoute allowed={["admin"]}>
                   <DashboardAdmin />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/dashboard-super"
+              element={
+                <ProtectedRoute allowed={["super_user"]}>
+                  <DashboardSuperUser />
                 </ProtectedRoute>
               }
             />
@@ -97,6 +110,7 @@ export default function App() {
         </main>
 
         <Footer />
+        <ChatWidget />
       </div>
     </Router>
   );

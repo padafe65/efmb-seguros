@@ -90,4 +90,14 @@ export class PoliciesController {
 
     return this.policiesService.findByUser(userId);
   }
+
+  @Post('test/verificar-vencimientos')
+  @Auth(ValidRoles.admin, ValidRoles.super_user)
+  async ejecutarCronManual() {
+    await this.policiesService.verificarPolizasPorVencer();
+    return {
+      ok: true,
+      message: 'CRON de vencimientos ejecutado manualmente',
+    };
+  }
 }

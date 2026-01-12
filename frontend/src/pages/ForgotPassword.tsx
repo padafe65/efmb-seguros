@@ -1,53 +1,133 @@
 import { useState } from "react";
+import { useNavigate, Link } from "react-router-dom";
 import API from "../api/axiosConfig";
+import FlipFormCard from "../components/FlipFormCard";
+
+const forgotPasswordImg = "/img/login1.avif";
 
 export default function ForgotPassword() {
-  const [correo, setCorreo] = useState("");
-  const [nueva, setNueva] = useState("");
+  const [email, setEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [mensaje, setMensaje] = useState("");
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setMensaje("");
+    setLoading(true);
+
+    // Validaciones
+    if (!email || !newPassword || !confirmPassword) {
+      setMensaje("❌ Por favor completa todos los campos");
+      setLoading(false);
+      return;
+    }
+
+    if (newPassword.length < 4) {
+      setMensaje("❌ La contraseña debe tener al menos 4 caracteres");
+      setLoading(false);
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setMensaje("❌ Las contraseñas no coinciden");
+      setLoading(false);
+      return;
+    }
 
     try {
-      console.log("Enviando:", { correo, nueva });
-
-       await API.patch("/usuarios/reset-password", {
-        correo,
-        nueva,
+      await API.patch("/auth/reset-password", {
+        email,
+        newPassword,
       });
 
-      setMensaje("✅ Contraseña actualizada. Ya puedes ingresar.");
-    } catch (error) {
-      setMensaje("❌ Error: " + (error.response?.data?.message || "Intenta nuevamente"));
+      setMensaje("✅ Contraseña actualizada correctamente. Ya puedes iniciar sesión.");
+      
+      // Limpiar formulario
+      setEmail("");
+      setNewPassword("");
+      setConfirmPassword("");
+
+      // Redirigir al login después de 2 segundos
+      setTimeout(() => {
+        navigate("/login");
+      }, 2000);
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || error.message || "Error al actualizar la contraseña";
+      setMensaje(`❌ ${errorMessage}`);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="container-registro">
-      <h2>Restablecer contraseña</h2>
+    <div style={{ padding: "40px" }}>
+      <FlipFormCard 
+        frontImage={forgotPasswordImg}
+        title="Restablecer Contraseña"
+      >
+        <form onSubmit={handleSubmit} style={{ display: "grid", gap: 12 }}>
+          <h2>Cambiar Contraseña</h2>
+          <p style={{ fontSize: "14px", color: "#666", marginBottom: "10px" }}>
+            Ingresa tu correo electrónico y tu nueva contraseña
+          </p>
 
-      <form onSubmit={handleSubmit} className="form-registro">
-        <input
-          type="email"
-          placeholder="Ingresa tu correo"
-          value={correo}
-          onChange={(e) => setCorreo(e.target.value)}
-          required
-        />
+          <label>Correo Electrónico</label>
+          <input
+            type="email"
+            placeholder="Ingresa tu correo"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            disabled={loading}
+          />
 
-        <input
-          type="password"
-          placeholder="Nueva contraseña"
-          value={nueva}
-          onChange={(e) => setNueva(e.target.value)}
-          required
-        />
+          <label>Nueva Contraseña</label>
+          <input
+            type="password"
+            placeholder="Mínimo 4 caracteres"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            required
+            minLength={4}
+            disabled={loading}
+          />
 
-        <button type="submit">Cambiar contraseña</button>
-      </form>
+          <label>Confirmar Nueva Contraseña</label>
+          <input
+            type="password"
+            placeholder="Confirma tu nueva contraseña"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            minLength={4}
+            disabled={loading}
+          />
 
-      <p>{mensaje}</p>
+          <button type="submit" disabled={loading}>
+            {loading ? "Procesando..." : "Cambiar Contraseña"}
+          </button>
+
+          {mensaje && (
+            <p style={{ 
+              color: mensaje.includes("✅") ? "green" : "red", 
+              marginTop: "10px",
+              textAlign: "center",
+              fontWeight: "bold"
+            }}>
+              {mensaje}
+            </p>
+          )}
+
+          <div style={{ marginTop: "10px", textAlign: "center" }}>
+            <Link to="/login" style={{ color: "#0984e3", textDecoration: "none" }}>
+              ← Volver al Login
+            </Link>
+          </div>
+        </form>
+      </FlipFormCard>
     </div>
   );
 }

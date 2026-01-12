@@ -94,4 +94,22 @@ export class AuthController {
   deleteUser(@Param('id') id: number) {
     return this.authService.deleteUser(+id);
   }
+
+  // Super User: actualizar roles de cualquier usuario
+  @Patch('users/:id/roles')
+  @Auth(ValidRoles.super_user)
+  async updateUserRoles(
+    @Param('id') id: number,
+    @Body() body: { roles: string[] },
+  ) {
+    return this.authService.updateUserRoles(+id, body.roles);
+  }
+
+  // Resetear contraseña por email (sin autenticación requerida)
+  @Patch('reset-password')
+  async resetPassword(
+    @Body() body: { email: string; newPassword: string },
+  ) {
+    return this.authService.resetPasswordByEmail(body.email, body.newPassword);
+  }
 }

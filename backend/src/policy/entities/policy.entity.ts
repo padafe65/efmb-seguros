@@ -84,5 +84,8 @@ export class PolicyEntity {
   @Column('text', { nullable: true })
   beneficiario: string;
 
+  @Column('boolean', { default: false })
+  notificada: boolean;
+
   // puedes agregar otros campos vehiculares que mencionaste...
 }
