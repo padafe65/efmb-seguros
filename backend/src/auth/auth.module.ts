@@ -7,12 +7,14 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from './strategies/jwt-strategy';
+import { NotificationsModule } from 'src/notifications/notifications.module';
 
 @Module({
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],
   imports: [
     ConfigModule,
+    NotificationsModule, // Para enviar emails de restablecimiento
 
     TypeOrmModule.forFeature([
       UsersEntity

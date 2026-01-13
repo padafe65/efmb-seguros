@@ -115,9 +115,12 @@ Comunícate con Seguros MAB para renovarla.
     await this.policyRepository.save(policy);
   }
 
-  async create(dto: CreatePolicyDto) {
+  async create(dto: CreatePolicyDto, creatorCompanyId?: number) {
     try {
-      const user = await this.userRepository.findOneBy({ id: +dto.user_id });
+      const user = await this.userRepository.findOne({
+        where: { id: +dto.user_id },
+        relations: ['company'],
+      });
       if (!user)
         throw new NotFoundException(`User with id ${dto.user_id} not found`);
 
@@ -126,12 +129,22 @@ Comunícate con Seguros MAB para renovarla.
       const inicio = new Date(inicio_vigencia);
       const fin = addYears(inicio, 1); // 🔥 1 año automático
 
-      const policy = this.policyRepository.create({
+      // Determinar company_id: usar el del creador o el del usuario
+      const companyId = creatorCompanyId || user.company?.id;
+      
+      const policyData: any = {
         ...rest,
         inicio_vigencia: inicio,
         fin_vigencia: fin,
         user,
-      });
+      };
+
+      // Solo asignar company si existe (después de ejecutar script SQL será obligatorio)
+      if (companyId) {
+        policyData.company = { id: companyId } as any;
+      }
+
+      const policy = this.policyRepository.create(policyData);
 
       const saved = await this.policyRepository.save(policy);
       return {
@@ -149,13 +162,15 @@ Comunícate con Seguros MAB para renovarla.
     placa?: string;
     limit?: number;
     skip?: number;
-  }) {
+    company_id?: number; // Para filtrar por empresa
+  }, requesterCompanyId?: number) {
     try {
-      const { userId, policyNumber, placa, limit, skip } = params;
+      const { userId, policyNumber, placa, limit, skip, company_id } = params;
 
       const query = this.policyRepository
         .createQueryBuilder('policy')
         .leftJoinAndSelect('policy.user', 'user')
+        .leftJoinAndSelect('policy.company', 'company')
         .skip(skip || 0)
         .take(limit || 100);
 
@@ -171,6 +186,17 @@ Comunícate con Seguros MAB para renovarla.
 
       if (placa) {
         query.andWhere('policy.placa ILIKE :pl', { pl: `%${placa}%` });
+      }
+
+      // Filtrar por company_id
+      // Si se proporciona company_id explícitamente (super_user), usarlo
+      // Si no, usar el company_id del requester (admin solo ve su empresa)
+      const filterCompanyId = company_id !== undefined 
+        ? company_id 
+        : (requesterCompanyId !== undefined && requesterCompanyId !== null ? requesterCompanyId : undefined);
+
+      if (filterCompanyId !== undefined) {
+        query.andWhere('company.id = :cid', { cid: filterCompanyId });
       }
 
       return await query.getMany();
@@ -191,10 +217,19 @@ Comunícate con Seguros MAB para renovarla.
     return policy;
   }
 
-  async findByUser(userId: number) {
+  async findByUser(userId: number, userCompanyId?: number) {
+    const whereConditions: any = {
+      user: { id: userId },
+    };
+
+    // Si el usuario tiene company_id, filtrar por él
+    if (userCompanyId !== undefined && userCompanyId !== null) {
+      whereConditions.company = { id: userCompanyId };
+    }
+
     return await this.policyRepository.find({
-      where: { user: { id: userId } },
-      relations: ['user'],
+      where: whereConditions,
+      relations: ['user', 'company'],
     });
   }
 

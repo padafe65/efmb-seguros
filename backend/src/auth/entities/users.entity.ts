@@ -1,6 +1,7 @@
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, ManyToOne, OneToMany, PrimaryGeneratedColumn, JoinColumn } from 'typeorm';
 import { ValidRoles } from '../interfaces/valid-roles';
 import { PolicyEntity } from 'src/policy/entities/policy.entity';
+import { CompanyEntity } from 'src/companies/entities/company.entity';
 
 @Entity({ name: 'users' })
 export class UsersEntity {
@@ -50,6 +51,18 @@ export class UsersEntity {
     default: [ValidRoles.user],
   })
   roles: ValidRoles[];
+
+  // Campos para restablecimiento de contraseña
+  @Column('text', { nullable: true, name: 'reset_password_token' })
+  reset_password_token: string | null;
+
+  @Column('timestamp', { nullable: true, name: 'reset_password_expires' })
+  reset_password_expires: Date | null;
+
+  // Relación con empresa/aseguradora
+  @ManyToOne(() => CompanyEntity, { nullable: true, eager: false })
+  @JoinColumn({ name: 'company_id' })
+  company?: CompanyEntity;
 
   @OneToMany(() => PolicyEntity, (policy) => policy.user)
   policies: PolicyEntity[];

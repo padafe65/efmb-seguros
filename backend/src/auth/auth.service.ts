@@ -17,6 +17,8 @@ import { JwtService } from '@nestjs/jwt';
 import { Payload } from './interfaces/jwt-payload.interface';
 import { UpdateUserDTO } from './dto/update-user.dto';
 import { PaginationDto } from 'src/common/dto/pagination.dto';
+import { NotificationsService } from 'src/notifications/notifications.service';
+import { randomBytes } from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -29,19 +31,28 @@ export class AuthService {
     private readonly configService: ConfigService,
 
     private readonly jwtService: JwtService,
+
+    private readonly notificationsService: NotificationsService,
   ) {}
 
-  async createUser(createUserDto: CreateUserDTO) {
+  async createUser(createUserDto: CreateUserDTO, creatorCompanyId?: number) {
     const { user_password, ...userData } = createUserDto;
 
     try {
-      const user = this.UsersRepository.create({
+      const userDataToCreate: any = {
         ...userData,
         user_password: bcrypt.hashSync(
           user_password,
           Number(this.configService.get('SALT_ROUNDS_DEV') || 10),
         ),
-      });
+      };
+
+      // Si el creador tiene company_id, asignarlo al nuevo usuario
+      if (creatorCompanyId) {
+        userDataToCreate.company = { id: creatorCompanyId } as any;
+      }
+
+      const user = this.UsersRepository.create(userDataToCreate);
 
       await this.UsersRepository.save(user);
       return {
@@ -102,8 +113,9 @@ export class AuthService {
     documento?: string;
     limit?: number;
     skip?: number;
-  }) {
-    const { user_name, email, documento, limit, skip } = params;
+    company_id?: number; // Para filtrar por empresa
+  }, requesterCompanyId?: number) {
+    const { user_name, email, documento, limit, skip, company_id } = params;
 
     const whereConditions: any = {};
 
@@ -119,8 +131,18 @@ export class AuthService {
       whereConditions.documento = ILike(`%${documento}%`);
     }
 
+    // Filtrar por company_id si se proporciona (super_user puede filtrar)
+    // O si el requester es admin, solo ver su empresa
+    if (company_id !== undefined) {
+      whereConditions.company = { id: company_id };
+    } else if (requesterCompanyId !== undefined && requesterCompanyId !== null) {
+      // Admin solo ve usuarios de su empresa
+      whereConditions.company = { id: requesterCompanyId };
+    }
+
     return this.UsersRepository.find({
       where: whereConditions,
+      relations: ['company'],
       order: { id: 'ASC' },
       take: limit ?? undefined,
       skip: skip ?? undefined,
@@ -133,15 +155,25 @@ export class AuthService {
     return user;
   }
 
-  async searchUsers(term: string) {
+  async searchUsers(term: string, requesterCompanyId?: number) {
     if (!term) return [];
 
+    const whereConditions: any[] = [
+      { user_name: ILike(`%${term}%`) },
+      { email: ILike(`%${term}%`) },
+      { documento: ILike(`%${term}%`) },
+    ];
+
+    // Si el requester es admin, filtrar por su empresa
+    if (requesterCompanyId !== undefined && requesterCompanyId !== null) {
+      whereConditions.forEach(condition => {
+        condition.company = { id: requesterCompanyId };
+      });
+    }
+
     return await this.UsersRepository.find({
-      where: [
-        { user_name: ILike(`%${term}%`) },
-        { email: ILike(`%${term}%`) },
-        { documento: ILike(`%${term}%`) },
-      ],
+      where: whereConditions,
+      relations: ['company'],
       order: { id: 'ASC' },
     });
   }
@@ -169,6 +201,16 @@ export class AuthService {
       if (data && 'user_password' in data && !data.user_password) {
         delete data.user_password;
       }
+    }
+
+    // Manejar company_id si viene en los datos
+    if (data && 'company_id' in data) {
+      if (data.company_id !== null && data.company_id !== undefined) {
+        (user as any).company = { id: data.company_id };
+      } else {
+        (user as any).company = null;
+      }
+      delete data.company_id; // Eliminar del data para no sobrescribir
     }
 
     Object.assign(user, data); // copiar cambios
@@ -211,14 +253,77 @@ export class AuthService {
   }
 
   /**
-   * Resetea la contraseña de un usuario por email (sin autenticación)
-   * Permite cambiar la contraseña directamente con email y nueva contraseña
+   * Solicita restablecimiento de contraseña - Genera token y envía email
    */
-  async resetPasswordByEmail(email: string, newPassword: string) {
+  async requestPasswordReset(email: string) {
     const user = await this.UsersRepository.findOne({ where: { email } });
     
     if (!user) {
-      throw new NotFoundException(`Usuario con email ${email} no encontrado`);
+      // Por seguridad, no revelamos si el email existe o no
+      this.logger.warn(`Intento de restablecimiento para email no existente: ${email}`);
+      return {
+        message: 'Si el email existe, recibirás un correo con las instrucciones',
+      };
+    }
+
+    // Generar token único
+    const resetToken = randomBytes(32).toString('hex');
+    const resetExpires = new Date();
+    resetExpires.setHours(resetExpires.getHours() + 1); // Expira en 1 hora
+
+    // Guardar token en la base de datos
+    user.reset_password_token = resetToken;
+    user.reset_password_expires = resetExpires;
+    await this.UsersRepository.save(user);
+
+    // Generar enlace de restablecimiento
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
+
+    // Enviar email
+    try {
+      await this.notificationsService.enviarEmailRestablecimiento(
+        user.email,
+        resetLink,
+        user.user_name,
+      );
+      this.logger.log(`✅ Email de restablecimiento enviado a: ${email}`);
+    } catch (error) {
+      this.logger.error(`❌ Error enviando email de restablecimiento a ${email}`, error);
+      // Limpiar token si falla el envío
+      user.reset_password_token = null;
+      user.reset_password_expires = null;
+      await this.UsersRepository.save(user);
+      throw new BadRequestException('Error al enviar el correo. Intenta nuevamente.');
+    }
+
+    return {
+      message: 'Si el email existe, recibirás un correo con las instrucciones',
+    };
+  }
+
+  /**
+   * Valida token y restablece la contraseña
+   */
+  async resetPasswordWithToken(token: string, newPassword: string) {
+    // Buscar usuario con el token válido
+    const user = await this.UsersRepository.findOne({
+      where: {
+        reset_password_token: token,
+      },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Token inválido o expirado');
+    }
+
+    // Verificar que el token no haya expirado
+    if (!user.reset_password_expires || user.reset_password_expires < new Date()) {
+      // Limpiar token expirado
+      user.reset_password_token = null;
+      user.reset_password_expires = null;
+      await this.UsersRepository.save(user);
+      throw new BadRequestException('Token expirado. Solicita un nuevo restablecimiento.');
     }
 
     // Validar que la nueva contraseña tenga al menos 4 caracteres
@@ -232,16 +337,39 @@ export class AuthService {
       Number(this.configService.get('SALT_ROUNDS_DEV') || 10),
     );
 
-    // Actualizar la contraseña
+    // Actualizar contraseña y limpiar token
     user.user_password = hashedPassword;
+    user.reset_password_token = null;
+    user.reset_password_expires = null;
     await this.UsersRepository.save(user);
 
-    this.logger.log(`✅ Contraseña actualizada para usuario: ${email}`);
+    this.logger.log(`✅ Contraseña restablecida para usuario: ${user.email}`);
 
     return {
-      message: 'Contraseña actualizada correctamente',
+      message: 'Contraseña restablecida correctamente',
       email: user.email,
     };
+  }
+
+  /**
+   * Valida si un token de restablecimiento es válido (sin cambiar contraseña)
+   */
+  async validateResetToken(token: string) {
+    const user = await this.UsersRepository.findOne({
+      where: {
+        reset_password_token: token,
+      },
+    });
+
+    if (!user) {
+      return { valid: false, message: 'Token inválido' };
+    }
+
+    if (!user.reset_password_expires || user.reset_password_expires < new Date()) {
+      return { valid: false, message: 'Token expirado' };
+    }
+
+    return { valid: true, email: user.email };
   }
 
   private handlerErrors(error: any) {

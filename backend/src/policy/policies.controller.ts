@@ -28,8 +28,9 @@ export class PoliciesController {
 
   @Post('create')
   @Auth(ValidRoles.admin, ValidRoles.super_user)
-  create(@Body() dto: CreatePolicyDto) {
-    return this.policiesService.create(dto);
+  create(@Body() dto: CreatePolicyDto, @GetUser() user: any) {
+    const companyId = user.company?.id || user.company_id || undefined;
+    return this.policiesService.create(dto, companyId);
   }
 
   @Get()
@@ -40,14 +41,22 @@ export class PoliciesController {
     @Query('placa') placa?: string,
     @Query('limit') limit?: number,
     @Query('skip') skip?: number,
+    @Query('company_id') company_id?: string,
+    @GetUser() user?: any,
   ) {
+    // Super_user puede filtrar por company_id, admin solo ve su empresa
+    const requesterCompanyId = user?.roles?.includes('super_user') 
+      ? (company_id ? Number(company_id) : undefined)
+      : (user?.company?.id || user?.company_id);
+
     return this.policiesService.findAllWithFilters({
       userId: user_id,
       policyNumber: policy_number,
       placa,
       limit,
       skip,
-    });
+      company_id: company_id ? Number(company_id) : undefined,
+    }, requesterCompanyId);
   }
 
   @Get(':id_policy')
@@ -82,13 +91,34 @@ export class PoliciesController {
     @GetUser() user: any,
   ) {
     // 🔐 si es USER, solo puede consultar sus propias pólizas
-    if (user.rol === 'user' && user.id !== userId) {
+    if (user.roles?.includes('user') && user.id !== userId) {
       throw new ForbiddenException(
         'No puede consultar pólizas de otro usuario',
       );
     }
 
-    return this.policiesService.findByUser(userId);
+    // Obtener company_id del usuario para filtrar
+    const userCompanyId = user.company?.id || user.company_id;
+    return this.policiesService.findByUser(userId, userCompanyId);
+  }
+
+  // Endpoint para que usuarios vean sus propias pólizas individuales
+  @Get('user-policy/:id_policy')
+  @Auth(ValidRoles.user, ValidRoles.admin, ValidRoles.super_user)
+  async findUserPolicy(
+    @Param('id_policy', ParseIntPipe) id_policy: number,
+    @GetUser() user: any,
+  ) {
+    const policy = await this.policiesService.findOne(id_policy);
+    
+    // 🔐 si es USER, solo puede ver sus propias pólizas
+    if (user.roles?.includes('user') && policy.user.id !== user.id) {
+      throw new ForbiddenException(
+        'No puede ver pólizas de otro usuario',
+      );
+    }
+
+    return policy;
   }
 
   @Post('test/verificar-vencimientos')

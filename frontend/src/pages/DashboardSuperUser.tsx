@@ -14,6 +14,12 @@ type User = {
   isactive?: boolean;
   ciudad?: string;
   telefono?: string;
+  company?: {
+    id: number;
+    nombre: string;
+    nit?: string;
+  };
+  company_id?: number;
 };
 
 type Policy = any;
@@ -33,9 +39,36 @@ export default function DashboardSuperUser(): JSX.Element {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [editingRoles, setEditingRoles] = useState<number | null>(null);
   const [newRoles, setNewRoles] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<"users" | "policies" | "stats">("users");
+  const [editingCompany, setEditingCompany] = useState<number | null>(null);
+  const [newCompanyId, setNewCompanyId] = useState<string>("");
+  const [activeTab, setActiveTab] = useState<"users" | "policies" | "stats" | "companies">("users");
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [filterCompanyId, setFilterCompanyId] = useState<string>("");
+  const [editingCompanyData, setEditingCompanyData] = useState<any>(null);
+  const [companyForm, setCompanyForm] = useState<any>({
+    nombre: "",
+    nit: "",
+    direccion: "",
+    telefono: "",
+    email: "",
+    logo_url: "",
+    color_primario: "#631025",
+    color_secundario: "#4c55d3",
+  });
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [useLogoUrl, setUseLogoUrl] = useState<boolean>(true); // true = URL, false = upload
 
   const navigate = useNavigate();
+
+  const loadCompanies = async () => {
+    try {
+      const res = await API.get("/companies");
+      setCompanies(res.data || []);
+    } catch (error) {
+      console.error("Error cargando empresas", error);
+    }
+  };
 
   const loadUsers = async (params: {
     user_name?: string;
@@ -43,10 +76,15 @@ export default function DashboardSuperUser(): JSX.Element {
     documento?: string;
     skip?: number;
     limit?: number;
+    company_id?: number;
   } = {}) => {
     try {
       setLoading(true);
-      const res = await API.get("/auth/users", { params });
+      const finalParams = { ...params };
+      if (filterCompanyId) {
+        finalParams.company_id = Number(filterCompanyId);
+      }
+      const res = await API.get("/auth/users", { params: finalParams });
       console.log("🟩 Usuarios cargados:", res.data);
       setUsers(res.data || []);
     } catch (err) {
@@ -103,6 +141,7 @@ export default function DashboardSuperUser(): JSX.Element {
       return;
     }
 
+    loadCompanies();
     loadUsers();
     loadPolicies();
     // eslint-disable-next-line
@@ -172,11 +211,13 @@ export default function DashboardSuperUser(): JSX.Element {
       user_id: filterUserId || undefined,
       policy_number: filterPolicyNumber || undefined,
       placa: filterPlaca || undefined,
+      company_id: filterCompanyId ? Number(filterCompanyId) : undefined,
     });
     loadUsers({
       user_name: filterUserName.trim() || undefined,
       email: filterUserEmail.trim() || undefined,
       documento: filterUserDocumento.trim() || undefined,
+      company_id: filterCompanyId ? Number(filterCompanyId) : undefined,
     });
   };
 
@@ -205,6 +246,114 @@ export default function DashboardSuperUser(): JSX.Element {
         return [...prev, role];
       }
     });
+  };
+
+  const handleEditUserCompany = (user: User) => {
+    setEditingCompany(user.id);
+    setNewCompanyId(user.company?.id?.toString() || user.company_id?.toString() || "");
+  };
+
+  const handleSaveUserCompany = async (userId: number) => {
+    try {
+      await API.patch(`/auth/update/${userId}`, { 
+        company_id: newCompanyId ? Number(newCompanyId) : null 
+      });
+      alert("Empresa asignada correctamente");
+      setEditingCompany(null);
+      loadUsers();
+    } catch (err) {
+      console.error(err);
+      alert("Error al asignar empresa");
+    }
+  };
+
+  const handleEditCompany = (company: any) => {
+    setEditingCompanyData(company.id);
+    setCompanyForm({
+      nombre: company.nombre || "",
+      nit: company.nit || "",
+      direccion: company.direccion || "",
+      telefono: company.telefono || "",
+      email: company.email || "",
+      logo_url: company.logo_url || "",
+      color_primario: company.color_primario || "#631025",
+      color_secundario: company.color_secundario || "#4c55d3",
+    });
+    // Si tiene logo_url, asumir que es URL externa si no empieza con /uploads/
+    setUseLogoUrl(company.logo_url ? !company.logo_url.startsWith('/uploads/') : true);
+    setLogoFile(null);
+    setLogoPreview(company.logo_url && company.logo_url.startsWith('/uploads/') 
+      ? `http://localhost:3000${company.logo_url}` 
+      : company.logo_url || null);
+  };
+
+  const handleSaveCompany = async () => {
+    try {
+      const formData = new FormData();
+      
+      // Agregar todos los campos del formulario
+      formData.append('nombre', companyForm.nombre);
+      if (companyForm.nit) formData.append('nit', companyForm.nit);
+      if (companyForm.direccion) formData.append('direccion', companyForm.direccion);
+      if (companyForm.telefono) formData.append('telefono', companyForm.telefono);
+      if (companyForm.email) formData.append('email', companyForm.email);
+      if (companyForm.color_primario) formData.append('color_primario', companyForm.color_primario);
+      if (companyForm.color_secundario) formData.append('color_secundario', companyForm.color_secundario);
+
+      // Si se usa URL, agregar logo_url. Si se usa upload, agregar el archivo
+      if (useLogoUrl && companyForm.logo_url) {
+        formData.append('logo_url', companyForm.logo_url);
+      } else if (!useLogoUrl && logoFile) {
+        formData.append('logo', logoFile);
+      }
+
+      if (editingCompanyData && editingCompanyData !== 0) {
+        await API.patch(`/companies/${editingCompanyData}`, formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+        alert("Empresa actualizada correctamente");
+      } else {
+        await API.post("/companies", formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+        alert("Empresa creada correctamente");
+      }
+      
+      setEditingCompanyData(null);
+      setCompanyForm({
+        nombre: "",
+        nit: "",
+        direccion: "",
+        telefono: "",
+        email: "",
+        logo_url: "",
+        color_primario: "#631025",
+        color_secundario: "#4c55d3",
+      });
+      setLogoFile(null);
+      setLogoPreview(null);
+      setUseLogoUrl(true);
+      loadCompanies();
+    } catch (err) {
+      console.error(err);
+      alert("Error al guardar empresa");
+    }
+  };
+
+  const handleDeleteCompany = async (id: number) => {
+    if (!confirm("¿Eliminar empresa? Los usuarios asociados perderán su asignación.")) return;
+    try {
+      await API.delete(`/companies/${id}`);
+      alert("Empresa eliminada correctamente");
+      loadCompanies();
+    } catch (err) {
+      console.error(err);
+      alert("Error al eliminar empresa");
+    }
   };
 
   const getStats = () => {
@@ -247,6 +396,9 @@ export default function DashboardSuperUser(): JSX.Element {
         </button>
         <button className="admin-btn" onClick={() => setActiveTab("stats")}>
           📊 Estadísticas
+        </button>
+        <button className="admin-btn" onClick={() => setActiveTab("companies")}>
+          🏢 Empresas
         </button>
         <button className="admin-btn" onClick={loadUsers}>
           🔄 Refrescar
@@ -327,7 +479,7 @@ export default function DashboardSuperUser(): JSX.Element {
         <section className="admin-section" style={{ marginBottom: 20 }}>
           <h3>👥 Gestión de Usuarios</h3>
 
-          <div className="admin-filters" style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <div className="admin-filters" style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
             <input
               className="admin-input"
               placeholder="Filtrar por nombre"
@@ -346,6 +498,17 @@ export default function DashboardSuperUser(): JSX.Element {
               value={filterUserDocumento}
               onChange={(e) => setFilterUserDocumento(e.target.value)}
             />
+            <select
+              className="admin-input"
+              value={filterCompanyId}
+              onChange={(e) => setFilterCompanyId(e.target.value)}
+              style={{ padding: "8px" }}
+            >
+              <option value="">Todas las empresas</option>
+              {companies.map(company => (
+                <option key={company.id} value={company.id}>{company.nombre}</option>
+              ))}
+            </select>
             <button className="admin-btn" onClick={handleSearch}>
               🔍 Filtrar
             </button>
@@ -355,6 +518,7 @@ export default function DashboardSuperUser(): JSX.Element {
                 setFilterUserName("");
                 setFilterUserEmail("");
                 setFilterUserDocumento("");
+                setFilterCompanyId("");
                 loadUsers();
               }}
             >
@@ -373,6 +537,7 @@ export default function DashboardSuperUser(): JSX.Element {
                     <th>Nombre</th>
                     <th>Email</th>
                     <th>Documento</th>
+                    <th>Empresa</th>
                     <th>Roles</th>
                     <th>Estado</th>
                     <th>Acciones</th>
@@ -385,6 +550,51 @@ export default function DashboardSuperUser(): JSX.Element {
                       <td>{u.user_name}</td>
                       <td>{u.email}</td>
                       <td>{u.documento || "-"}</td>
+                      <td>
+                        {editingCompany === u.id ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            <select
+                              value={newCompanyId}
+                              onChange={(e) => setNewCompanyId(e.target.value)}
+                              style={{ padding: "4px", fontSize: 12 }}
+                            >
+                              <option value="">Sin empresa</option>
+                              {companies.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.nombre}
+                                </option>
+                              ))}
+                            </select>
+                            <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                              <button
+                                className="admin-btn"
+                                style={{ padding: "4px 8px", fontSize: 12 }}
+                                onClick={() => handleSaveUserCompany(u.id)}
+                              >
+                                ✅ Guardar
+                              </button>
+                              <button
+                                className="admin-btn secondary"
+                                style={{ padding: "4px 8px", fontSize: 12 }}
+                                onClick={() => setEditingCompany(null)}
+                              >
+                                ❌ Cancelar
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            {u.company?.nombre || "Sin empresa"}
+                            <button
+                              className="admin-btn"
+                              style={{ marginLeft: 8, padding: "4px 8px", fontSize: 12 }}
+                              onClick={() => handleEditUserCompany(u)}
+                            >
+                              ✏️ Editar
+                            </button>
+                          </div>
+                        )}
+                      </td>
                       <td>
                         {editingRoles === u.id ? (
                           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -454,7 +664,7 @@ export default function DashboardSuperUser(): JSX.Element {
         <section className="admin-section">
           <h3>📋 Gestión de Pólizas</h3>
 
-          <div className="admin-filters" style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <div className="admin-filters" style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
             <input
               className="admin-input"
               placeholder="Filtrar por user_id"
@@ -473,6 +683,17 @@ export default function DashboardSuperUser(): JSX.Element {
               value={filterPlaca}
               onChange={(e) => setFilterPlaca(e.target.value)}
             />
+            <select
+              className="admin-input"
+              value={filterCompanyId}
+              onChange={(e) => setFilterCompanyId(e.target.value)}
+              style={{ padding: "8px" }}
+            >
+              <option value="">Todas las empresas</option>
+              {companies.map(company => (
+                <option key={company.id} value={company.id}>{company.nombre}</option>
+              ))}
+            </select>
             <button className="admin-btn" onClick={handleSearch}>
               🔍 Filtrar
             </button>
@@ -482,6 +703,7 @@ export default function DashboardSuperUser(): JSX.Element {
                 setFilterUserId("");
                 setFilterPolicyNumber("");
                 setFilterPlaca("");
+                setFilterCompanyId("");
                 loadPolicies();
               }}
             >
@@ -504,6 +726,7 @@ export default function DashboardSuperUser(): JSX.Element {
                     <th>Fin</th>
                     <th>Valor</th>
                     <th>Usuario</th>
+                    <th>Empresa</th>
                     <th>Teléfono</th>
                     <th>Acciones</th>
                   </tr>
@@ -519,6 +742,7 @@ export default function DashboardSuperUser(): JSX.Element {
                       <td>{p.fin_vigencia ? new Date(p.fin_vigencia).toLocaleDateString() : "-"}</td>
                       <td>{p.valor_asegurado ?? "-"}</td>
                       <td>{p.user?.user_name ?? "-"}</td>
+                      <td>{p.company?.nombre || "Sin empresa"}</td>
                       <td>{p.user?.telefono ?? "-"}</td>
                       <td className="row-actions" style={{ display: "flex", gap: 8 }}>
                         <button className="edit" onClick={() => navigate(`/admin/policies/edit/${p.id_policy}`)}>
@@ -532,8 +756,260 @@ export default function DashboardSuperUser(): JSX.Element {
                   ))}
                   {policies.length === 0 && (
                     <tr>
-                      <td colSpan={10} className="admin-empty">
+                      <td colSpan={11} className="admin-empty">
                         No hay pólizas
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Tab: Empresas */}
+      {activeTab === "companies" && (
+        <section className="admin-section">
+          <h3>🏢 Gestión de Empresas</h3>
+
+          <div style={{ marginBottom: 20 }}>
+            <button
+              className="admin-btn"
+              onClick={() => {
+                setEditingCompanyData(0); // 0 significa crear nuevo
+                setCompanyForm({
+                  nombre: "",
+                  nit: "",
+                  direccion: "",
+                  telefono: "",
+                  email: "",
+                  logo_url: "",
+                  color_primario: "#631025",
+                  color_secundario: "#4c55d3",
+                });
+                setLogoFile(null);
+                setLogoPreview(null);
+                setUseLogoUrl(true);
+              }}
+            >
+              ➕ Crear Nueva Empresa
+            </button>
+          </div>
+
+          {/* Formulario de creación/edición */}
+          {editingCompanyData !== null && (
+            <div style={{
+              background: "#f5f5f5",
+              padding: 20,
+              borderRadius: 8,
+              marginBottom: 20
+            }}>
+              <h4>{editingCompanyData === 0 ? "Crear Nueva Empresa" : "Editar Empresa"}</h4>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 10 }}>
+                <input
+                  className="admin-input"
+                  placeholder="Nombre de la empresa *"
+                  value={companyForm.nombre}
+                  onChange={(e) => setCompanyForm({...companyForm, nombre: e.target.value})}
+                  required
+                />
+                <input
+                  className="admin-input"
+                  placeholder="NIT"
+                  value={companyForm.nit}
+                  onChange={(e) => setCompanyForm({...companyForm, nit: e.target.value})}
+                />
+                <input
+                  className="admin-input"
+                  placeholder="Dirección"
+                  value={companyForm.direccion}
+                  onChange={(e) => setCompanyForm({...companyForm, direccion: e.target.value})}
+                />
+                <input
+                  className="admin-input"
+                  placeholder="Teléfono"
+                  value={companyForm.telefono}
+                  onChange={(e) => setCompanyForm({...companyForm, telefono: e.target.value})}
+                />
+                <input
+                  className="admin-input"
+                  placeholder="Email"
+                  type="email"
+                  value={companyForm.email}
+                  onChange={(e) => setCompanyForm({...companyForm, email: e.target.value})}
+                />
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <label style={{ display: "block", marginBottom: "8px", fontWeight: "bold" }}>
+                    Logo de la Empresa
+                  </label>
+                  <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: "5px", cursor: "pointer" }}>
+                      <input
+                        type="radio"
+                        checked={useLogoUrl}
+                        onChange={() => setUseLogoUrl(true)}
+                      />
+                      Usar URL
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: "5px", cursor: "pointer" }}>
+                      <input
+                        type="radio"
+                        checked={!useLogoUrl}
+                        onChange={() => setUseLogoUrl(false)}
+                      />
+                      Subir desde PC
+                    </label>
+                  </div>
+                  
+                  {useLogoUrl ? (
+                    <input
+                      className="admin-input"
+                      placeholder="URL del logo (ej: https://ejemplo.com/logo.png)"
+                      value={companyForm.logo_url}
+                      onChange={(e) => setCompanyForm({...companyForm, logo_url: e.target.value})}
+                    />
+                  ) : (
+                    <div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setLogoFile(file);
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              setLogoPreview(reader.result as string);
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        style={{ padding: "8px", width: "100%" }}
+                      />
+                      {logoPreview && (
+                        <div style={{ marginTop: "10px" }}>
+                          <img
+                            src={logoPreview}
+                            alt="Preview"
+                            style={{ maxWidth: "200px", maxHeight: "200px", borderRadius: "8px" }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <input
+                  className="admin-input"
+                  placeholder="Color primario (hex)"
+                  value={companyForm.color_primario}
+                  onChange={(e) => setCompanyForm({...companyForm, color_primario: e.target.value})}
+                />
+                <input
+                  className="admin-input"
+                  placeholder="Color secundario (hex)"
+                  value={companyForm.color_secundario}
+                  onChange={(e) => setCompanyForm({...companyForm, color_secundario: e.target.value})}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 15 }}>
+                <button className="admin-btn" onClick={handleSaveCompany}>
+                  💾 {editingCompanyData === 0 ? "Crear" : "Actualizar"} Empresa
+                </button>
+                <button
+                  className="admin-btn secondary"
+                  onClick={() => {
+                    setEditingCompanyData(null);
+                    setCompanyForm({
+                      nombre: "",
+                      nit: "",
+                      direccion: "",
+                      telefono: "",
+                      email: "",
+                      logo_url: "",
+                      color_primario: "#631025",
+                      color_secundario: "#4c55d3",
+                    });
+                    setLogoFile(null);
+                    setLogoPreview(null);
+                    setUseLogoUrl(true);
+                  }}
+                >
+                  ❌ Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Tabla de empresas */}
+          {loading ? (
+            <p className="admin-empty">Cargando empresas...</p>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table className="admin-table" style={{ width: "100%" }}>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Nombre</th>
+                    <th>NIT</th>
+                    <th>Email</th>
+                    <th>Teléfono</th>
+                    <th>Colores</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {companies.map((c) => (
+                    <tr key={c.id}>
+                      <td>{c.id}</td>
+                      <td>{c.nombre}</td>
+                      <td>{c.nit || "-"}</td>
+                      <td>{c.email || "-"}</td>
+                      <td>{c.telefono || "-"}</td>
+                      <td>
+                        <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                          <div
+                            style={{
+                              width: 20,
+                              height: 20,
+                              background: c.color_primario || "#631025",
+                              border: "1px solid #ccc",
+                              borderRadius: 4
+                            }}
+                          />
+                          <div
+                            style={{
+                              width: 20,
+                              height: 20,
+                              background: c.color_secundario || "#4c55d3",
+                              border: "1px solid #ccc",
+                              borderRadius: 4
+                            }}
+                          />
+                        </div>
+                      </td>
+                      <td>{c.isactive ? "✅ Activa" : "❌ Inactiva"}</td>
+                      <td className="row-actions" style={{ display: "flex", gap: 8 }}>
+                        <button
+                          className="edit"
+                          onClick={() => handleEditCompany(c)}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          className="delete"
+                          onClick={() => handleDeleteCompany(c.id)}
+                        >
+                          Eliminar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {companies.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="admin-empty">
+                        No hay empresas registradas
                       </td>
                     </tr>
                   )}
@@ -563,6 +1039,7 @@ export default function DashboardSuperUser(): JSX.Element {
                     <th>Tipo</th>
                     <th>Inicio</th>
                     <th>Fin</th>
+                    <th>Empresa</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
@@ -574,6 +1051,7 @@ export default function DashboardSuperUser(): JSX.Element {
                       <td>{p.tipo_poliza}</td>
                       <td>{new Date(p.inicio_vigencia).toLocaleDateString()}</td>
                       <td>{new Date(p.fin_vigencia).toLocaleDateString()}</td>
+                      <td>{p.company?.nombre || "Sin empresa"}</td>
                       <td>
                         <button
                           className="edit"

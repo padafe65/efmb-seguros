@@ -6,6 +6,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { UsersEntity } from 'src/auth/entities/users.entity';
+import { CompanyEntity } from 'src/companies/entities/company.entity';
 
 @Entity({ name: 'policies' })
 export class PolicyEntity {
@@ -86,6 +87,12 @@ export class PolicyEntity {
 
   @Column('boolean', { default: false })
   notificada: boolean;
+
+  // Relación con empresa/aseguradora
+  // Temporalmente nullable hasta ejecutar el script SQL de migración
+  @ManyToOne(() => CompanyEntity, { nullable: true, eager: false })
+  @JoinColumn({ name: 'company_id' })
+  company?: CompanyEntity;
 
   // puedes agregar otros campos vehiculares que mencionaste...
 }

@@ -7,6 +7,8 @@ import { AuthModule } from './auth/auth.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { NotificationsModule } from './notifications/notifications.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
+import { ContactModule } from './contact/contact.module';
+import { CompaniesModule } from './companies/companies.module';
 
 @Module({
   imports: [
@@ -28,6 +30,8 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
     AuthModule,
     NotificationsModule,
     WhatsappModule,
+    ContactModule,
+    CompaniesModule,
   ],
   controllers: [],
   providers: [],

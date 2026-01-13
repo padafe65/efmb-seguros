@@ -29,8 +29,10 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  registerUser(@Body() createUserDto: CreateUserDTO) {
-    return this.authService.createUser(createUserDto);
+  registerUser(@Body() createUserDto: CreateUserDTO, @GetUser() user?: any) {
+    // Si el usuario está logueado (admin), asignar su company_id
+    const companyId = user?.company?.id || user?.company_id || undefined;
+    return this.authService.createUser(createUserDto, companyId);
   }
 
   @Post('login')
@@ -45,8 +47,14 @@ export class AuthController {
   }
 
   @Get('users')
-  getAllUsers(@Query() query: any) {
-    const { user_name, email, documento, limit, skip } = query;
+  @Auth(ValidRoles.admin, ValidRoles.super_user)
+  getAllUsers(@Query() query: any, @GetUser() user: any) {
+    const { user_name, email, documento, limit, skip, company_id } = query;
+
+    // Super_user puede filtrar por company_id, admin solo ve su empresa
+    const requesterCompanyId = user.roles?.includes('super_user') 
+      ? (company_id ? Number(company_id) : undefined)
+      : (user.company?.id || user.company_id);
 
     return this.authService.findAllUsers({
       user_name,
@@ -54,7 +62,8 @@ export class AuthController {
       documento,
       limit: limit ? Number(limit) : undefined,
       skip: skip ? Number(skip) : undefined,
-    });
+      company_id: company_id ? Number(company_id) : undefined,
+    }, requesterCompanyId);
   }
 
   // Nuevo: obtener usuario por id (sin password)
@@ -64,8 +73,12 @@ export class AuthController {
   }
 
   @Get('search')
-  search(@Query('q') q: string) {
-    return this.authService.searchUsers(q);
+  @Auth(ValidRoles.admin, ValidRoles.super_user)
+  search(@Query('q') q: string, @GetUser() user: any) {
+    const requesterCompanyId = user.roles?.includes('super_user') 
+      ? undefined 
+      : (user.company?.id || user.company_id);
+    return this.authService.searchUsers(q, requesterCompanyId);
   }
 
   // Admin: actualizar cualquier usuario (NO puede cambiar password)
@@ -105,11 +118,23 @@ export class AuthController {
     return this.authService.updateUserRoles(+id, body.roles);
   }
 
-  // Resetear contraseña por email (sin autenticación requerida)
+  // Solicitar restablecimiento de contraseña (envía email con token)
+  @Post('forgot-password')
+  async requestPasswordReset(@Body() body: { email: string }) {
+    return this.authService.requestPasswordReset(body.email);
+  }
+
+  // Validar token de restablecimiento
+  @Get('validate-reset-token/:token')
+  async validateResetToken(@Param('token') token: string) {
+    return this.authService.validateResetToken(token);
+  }
+
+  // Restablecer contraseña con token
   @Patch('reset-password')
-  async resetPassword(
-    @Body() body: { email: string; newPassword: string },
+  async resetPasswordWithToken(
+    @Body() body: { token: string; newPassword: string },
   ) {
-    return this.authService.resetPasswordByEmail(body.email, body.newPassword);
+    return this.authService.resetPasswordWithToken(body.token, body.newPassword);
   }
 }
