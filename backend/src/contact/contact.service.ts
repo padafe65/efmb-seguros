@@ -240,7 +240,15 @@ export class ContactService {
   }
 
   async respondToMessage(id: number, respondDto: RespondMessageDto, respondedByUserId: number) {
-    const message = await this.findOne(id);
+    // Cargar el mensaje con todas las relaciones necesarias, incluyendo company
+    const message = await this.contactMessageRepository.findOne({
+      where: { id },
+      relations: ['user', 'responded_by_user', 'company'],
+    });
+
+    if (!message) {
+      throw new NotFoundException(`Mensaje con ID ${id} no encontrado`);
+    }
 
     message.respuesta = respondDto.respuesta;
     message.respondido = true;
