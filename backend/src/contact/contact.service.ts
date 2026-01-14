@@ -1,12 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ContactMessageEntity } from './entities/contact-message.entity';
 import { CreateContactMessageDto } from './dto/create-contact-message.dto';
 import { RespondMessageDto } from './dto/respond-message.dto';
 import { NotificationsService } from 'src/notifications/notifications.service';
-import { NotFoundException } from '@nestjs/common';
 import { UsersEntity } from 'src/auth/entities/users.entity';
+import { CompanyEntity } from 'src/companies/entities/company.entity';
 
 @Injectable()
 export class ContactService {
