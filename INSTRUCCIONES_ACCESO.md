@@ -111,7 +111,7 @@ El frontend estará en: `http://localhost:5173`
 ### Botones en Home:
 ```
 ┌─────────────────────────────────────┐
-│   BIENVENIDO A SEGUROSMAB...        │
+│   BIENVENIDO A EFMB-SEGUROS...        │
 │                                      │
 │   Gestión moderna, rápida...       │
 │                                      │

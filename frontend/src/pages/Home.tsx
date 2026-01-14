@@ -85,7 +85,7 @@ export default function Home() {
 
       <div className="hero text-center p-10">
         <h1 className="text-4xl font-bold mb-4">
-          BIENVENIDO A SEGUROSMAB LA EMPRESA QUE CON CARIÑO ASEGURA TU PRESENTE Y FUTURO
+          BIENVENIDO A EFMB-SEGUROS LA EMPRESA QUE CON CARIÑO ASEGURA TU PRESENTE Y FUTURO
         </h1>
 
         <p className="text-lg mb-6">

@@ -121,7 +121,7 @@ ALTER TABLE contact_messages ADD COLUMN company_id INTEGER REFERENCES companies(
 ```typescript
 const generatePDF = (policyData: any, userData: any) => {
   // Hardcodeado:
-  <h1>SEGUROS MAB</h1>
+  <h1>EFMB SEGUROS</h1>
 }
 ```
 

@@ -77,7 +77,7 @@ export class PoliciesService implements OnModuleInit {
     const mensajeUsuario = `
 Hola ${policy.user.user_name},
 Tu póliza ${policy.policy_number} vence el ${fechaVencimiento} (en ${diasRestantes} días).
-Comunícate con Seguros MAB para renovarla.
+Comunícate con EFMB Seguros para renovarla.
 `;
 
     const mensajeAdmin = `

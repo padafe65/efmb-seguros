@@ -15,7 +15,7 @@ TypeORM está intentando agregar la columna `company_id` como `NOT NULL` a la ta
 **Paso 1:** Ejecuta el script SQL de migración ANTES de reiniciar el backend:
 
 1. Abre pgAdmin 4
-2. Conecta a la base de datos `segurosmab`
+2. Conecta a la base de datos `efmb_seguros`
 3. Ejecuta el archivo `migracion_multi_tenant.sql`
 4. Esto asignará valores a todas las columnas `company_id`
 5. Reinicia el backend

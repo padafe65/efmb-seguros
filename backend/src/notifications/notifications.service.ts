@@ -14,7 +14,7 @@ export class NotificationsService {
 
   async enviarCorreo(to: string, mensaje: string, html?: string) {
     await this.transporter.sendMail({
-      from: '"Seguros MAB" <padafe654@gmail.com>',
+      from: '"EFMB Seguros" <padafe654@gmail.com>',
       to,
       subject: 'Póliza próxima a vencer',
       text: mensaje,
@@ -39,7 +39,7 @@ export class NotificationsService {
       <body>
         <div class="container">
           <div class="header">
-            <h2>Seguros MAB</h2>
+            <h2>EFMB Seguros</h2>
           </div>
           <div class="content">
             <h3>Restablecer Contraseña</h3>
@@ -54,7 +54,7 @@ export class NotificationsService {
             <p>Si no solicitaste este cambio, ignora este correo y tu contraseña permanecerá sin cambios.</p>
           </div>
           <div class="footer">
-            <p>© 2026 Seguros MAB - Todos los derechos reservados</p>
+            <p>© 2026 EFMB Seguros - Todos los derechos reservados</p>
           </div>
         </div>
       </body>
@@ -62,9 +62,9 @@ export class NotificationsService {
     `;
 
     await this.transporter.sendMail({
-      from: '"Seguros MAB" <padafe654@gmail.com>',
+      from: '"EFMB Seguros" <padafe654@gmail.com>',
       to,
-      subject: 'Restablecer Contraseña - Seguros MAB',
+      subject: 'Restablecer Contraseña - EFMB Seguros',
       html: htmlContent,
       text: `Hola ${userName},\n\nHas solicitado restablecer tu contraseña. Visita este enlace para crear una nueva contraseña:\n\n${resetLink}\n\nEste enlace expirará en 1 hora.\n\nSi no solicitaste este cambio, ignora este correo.`,
     });

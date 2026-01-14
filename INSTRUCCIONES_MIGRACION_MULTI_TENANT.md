@@ -16,7 +16,7 @@ Se ha implementado completamente el sistema multi-tenant que permite:
 ### 1. Ejecutar Script SQL de Migración
 
 1. Abre **pgAdmin 4**
-2. Conecta a tu base de datos `segurosmab`
+2. Conecta a tu base de datos `efmb_seguros`
 3. Abre el archivo `migracion_multi_tenant.sql`
 4. Ejecuta todo el script (F5 o botón "Execute")
 
@@ -24,7 +24,7 @@ Se ha implementado completamente el sistema multi-tenant que permite:
 - Crea la tabla `companies`
 - Crea una empresa por defecto "Seguros MAB"
 - Agrega `company_id` a `users`, `policies`, `contact_messages`
-- Asigna todos los datos existentes a "Seguros MAB"
+- Asigna todos los datos existentes a "EFMB Seguros"
 
 ---
 
@@ -125,7 +125,7 @@ El frontend ahora:
 - Dropdown para seleccionar empresa
 
 ### PDF de Pólizas
-- Usa `companyData.nombre` en lugar de "SEGUROS MAB"
+- Usa `companyData.nombre` en lugar de "EFMB SEGUROS"
 - Usa `companyData.nit`, `direccion`, `telefono`, `email`
 - Usa `companyData.color_primario` y `color_secundario` para estilos
 
@@ -151,7 +151,7 @@ El frontend ahora:
 
 ## ⚠️ Notas Importantes
 
-1. **Datos Existentes**: Todos los datos existentes se asignan a "Seguros MAB" por defecto
+1. **Datos Existentes**: Todos los datos existentes se asignan a "EFMB Seguros" por defecto
 2. **Nuevos Usuarios**: Si un admin crea un usuario, se asigna automáticamente a su empresa
 3. **Nuevas Pólizas**: Se asignan a la empresa del admin que las crea
 4. **Super User**: Puede ver y gestionar todas las empresas
@@ -169,7 +169,7 @@ El frontend ahora:
 - **Causa**: Intentas asignar un `company_id` que no existe
 - **Solución**: Verificar que la empresa existe en la tabla `companies`
 
-### Los PDFs muestran "SEGUROS MAB" en lugar del nombre de la empresa
+### Los PDFs muestran "EFMB SEGUROS" en lugar del nombre de la empresa
 - **Causa**: No se cargaron los datos de la empresa
 - **Solución**: Verificar que la póliza tiene `company_id` y que el endpoint `/companies/:id` funciona
 

@@ -136,8 +136,8 @@ export default function ChatWidget({
           className="fb-customerchat"
           page_id={facebookPageId}
           theme_color="#0084ff"
-          logged_in_greeting="¡Hola! ¿En qué podemos ayudarte con Seguros MAB?"
-          logged_out_greeting="¡Hola! ¿En qué podemos ayudarte con Seguros MAB?"
+          logged_in_greeting="¡Hola! ¿En qué podemos ayudarte con EFMB Seguros?"
+          logged_out_greeting="¡Hola! ¿En qué podemos ayudarte con EFMB Seguros?"
         ></div>
       )}
     </>

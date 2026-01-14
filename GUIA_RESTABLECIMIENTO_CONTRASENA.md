@@ -42,7 +42,7 @@ EMAIL_USER=tu_email@gmail.com
 EMAIL_PASS=tu_app_password
 ```
 
-**Nota**: En producción, cambia `FRONTEND_URL` a tu dominio real (ej: `https://segurosmab.com`)
+**Nota**: En producción, cambia `FRONTEND_URL` a tu dominio real (ej: `https://efmb-seguros.com`)
 
 ---
 

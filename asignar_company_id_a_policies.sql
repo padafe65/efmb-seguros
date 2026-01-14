@@ -9,7 +9,7 @@ SELECT
     COUNT(*) AS total_policies,
     COUNT(CASE WHEN company_id IS NULL THEN 1 END) AS sin_company_id,
     COUNT(CASE WHEN company_id IS NOT NULL THEN 1 END) AS con_company_id,
-    COUNT(CASE WHEN company_id = 1 THEN 1 END) AS con_seguros_mab
+    COUNT(CASE WHEN company_id = 1 THEN 1 END) AS con_efmb_seguros
 FROM policies;
 
 -- Ver pólizas que necesitan company_id asignado
@@ -36,11 +36,11 @@ ORDER BY p.id_policy;
 -- 2. ACTUALIZACIÓN DE PÓLIZAS
 -- ============================================
 -- Opción A: Asignar company_id basado en el company_id del usuario propietario
--- Si el usuario tiene company_id, usar ese. Si no, usar company_id = 1 (Seguros MAB)
+-- Si el usuario tiene company_id, usar ese. Si no, usar company_id = 1 (EFMB Seguros)
 UPDATE policies p
 SET company_id = COALESCE(
     (SELECT company_id FROM users WHERE id = p.user_id),
-    1  -- Si el usuario no tiene company_id, asignar Seguros MAB (id = 1)
+    1  -- Si el usuario no tiene company_id, asignar EFMB Seguros (id = 1)
 )
 WHERE p.company_id IS NULL;
 
@@ -57,7 +57,7 @@ SELECT
     p.company_id AS policy_company_id,
     CASE 
         WHEN p.company_id = u.company_id THEN '✅ Coincide con usuario'
-        WHEN p.company_id = 1 AND u.company_id IS NULL THEN '✅ Asignada por defecto (Seguros MAB)'
+        WHEN p.company_id = 1 AND u.company_id IS NULL THEN '✅ Asignada por defecto (EFMB Seguros)'
         WHEN p.company_id IS NULL THEN '⚠️ Sin compañía asignada'
         ELSE 'ℹ️ Asignada manualmente'
     END AS estado
@@ -82,7 +82,7 @@ ORDER BY total_policies DESC;
 SELECT 
     CASE 
         WHEN p.company_id IS NULL THEN 'Sin compañía asignada'
-        WHEN p.company_id = 1 THEN 'Seguros MAB'
+        WHEN p.company_id = 1 THEN 'EFMB Seguros'
         ELSE 'Otra compañía'
     END AS estado,
     COUNT(*) AS total_policies,
@@ -91,7 +91,7 @@ FROM policies p
 GROUP BY 
     CASE 
         WHEN p.company_id IS NULL THEN 'Sin compañía asignada'
-        WHEN p.company_id = 1 THEN 'Seguros MAB'
+        WHEN p.company_id = 1 THEN 'EFMB Seguros'
         ELSE 'Otra compañía'
     END
 ORDER BY total_policies DESC;

@@ -153,7 +153,7 @@ Espera a ver: `Local: http://localhost:5173`
 ┌─────────────────────────────────────┐
 │   [Carrusel de imágenes]            │
 │                                      │
-│   BIENVENIDO A SEGUROSMAB...        │
+│   BIENVENIDO A EFMB-SEGUROS...        │
 │                                      │
 │   Gestión moderna, rápida...        │
 │                                      │

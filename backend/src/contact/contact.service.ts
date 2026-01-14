@@ -157,7 +157,7 @@ export class ContactService {
               </p>
             </div>
             <div class="footer">
-              <p>© 2026 Seguros MAB - Sistema de Contacto</p>
+              <p>© 2026 EFMB Seguros - Sistema de Contacto</p>
             </div>
           </div>
         </body>
@@ -290,10 +290,10 @@ export class ContactService {
                 Si tienes más preguntas, no dudes en contactarnos nuevamente.
               </p>
 
-              <p>Atentamente,<br><strong>Equipo de Seguros MAB</strong></p>
+              <p>Atentamente,<br><strong>Equipo de EFMB Seguros</strong></p>
             </div>
             <div class="footer">
-              <p>© 2026 Seguros MAB - Todos los derechos reservados</p>
+              <p>© 2026 EFMB Seguros - Todos los derechos reservados</p>
             </div>
           </div>
         </body>
