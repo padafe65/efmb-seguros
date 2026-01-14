@@ -36,7 +36,7 @@ export class AuthService {
     private readonly notificationsService: NotificationsService,
   ) {}
 
-  async createUser(createUserDto: CreateUserDTO, creatorCompanyId?: number, creatorRoles?: string[]) {
+  async createUser(createUserDto: CreateUserDTO, creatorCompanyId?: number, creatorRoles?: string[], creatorId?: number) {
     const { user_password, ...userData } = createUserDto;
 
     try {
@@ -45,9 +45,14 @@ export class AuthService {
       const privilegedRoles = [ValidRoles.admin, ValidRoles.super_user];
       const hasPrivilegedRole = requestedRoles.some(role => privilegedRoles.includes(role));
 
-      // Si se intenta crear un usuario con rol privilegiado, verificar que el creador sea super_user
+      // Determinar permisos del creador
+      const isCreatorSuperUser = creatorRoles?.includes(ValidRoles.super_user);
+      const isCreatorAdmin = creatorRoles?.includes(ValidRoles.admin);
+      const isCreatorSubAdmin = creatorRoles?.includes(ValidRoles.sub_admin);
+
+      // Validación de roles según el creador
       if (hasPrivilegedRole) {
-        const isCreatorSuperUser = creatorRoles?.includes(ValidRoles.super_user);
+        // Solo super_user puede crear admin o super_user
         if (!isCreatorSuperUser) {
           this.logger.warn(`⚠️ Intento de crear usuario con rol privilegiado sin autorización: ${requestedRoles.join(', ')}`);
           throw new BadRequestException(
@@ -55,12 +60,22 @@ export class AuthService {
             'Solo un super_user puede crear estos roles.'
           );
         }
-      }
-
-      // Si el registro es público (sin creador), forzar rol 'user'
-      if (!creatorRoles && requestedRoles.some(role => privilegedRoles.includes(role))) {
-        this.logger.warn(`⚠️ Intento de registro público con rol privilegiado. Forzando rol 'user'.`);
-        userData.roles = [ValidRoles.user];
+      } else if (requestedRoles.includes(ValidRoles.sub_admin)) {
+        // Solo super_user, admin o sub_admin pueden crear sub_admin
+        const isCreatorSubAdmin = creatorRoles?.includes(ValidRoles.sub_admin);
+        if (!isCreatorSuperUser && !isCreatorAdmin && !isCreatorSubAdmin) {
+          this.logger.warn(`⚠️ Intento de crear usuario sub_admin sin autorización. Creador: ${creatorRoles?.join(', ') || 'público'}`);
+          throw new BadRequestException(
+            'No tienes permisos para crear usuarios con rol sub_admin. ' +
+            'Solo un admin, sub_admin o super_user puede crear este rol.'
+          );
+        }
+      } else if (!isCreatorSuperUser && !isCreatorAdmin && !isCreatorSubAdmin) {
+        // Si el registro es público (sin creador con permisos), forzar rol 'user'
+        if (requestedRoles.some(role => role !== ValidRoles.user)) {
+          this.logger.warn(`⚠️ Intento de registro público con rol no permitido. Forzando rol 'user'.`);
+          userData.roles = [ValidRoles.user];
+        }
       }
 
       const userDataToCreate: any = {
@@ -74,6 +89,12 @@ export class AuthService {
       // Si el creador tiene company_id, asignarlo al nuevo usuario
       if (creatorCompanyId) {
         userDataToCreate.company = { id: creatorCompanyId } as any;
+      }
+
+      // Guardar información del creador (admin o sub_admin)
+      if (creatorId) {
+        userDataToCreate.created_by_id = creatorId;
+        this.logger.log(`📝 Usuario creado por usuario ID: ${creatorId} (roles: ${creatorRoles?.join(', ') || 'público'})`);
       }
 
       const user = this.UsersRepository.create(userDataToCreate);
@@ -134,14 +155,19 @@ export class AuthService {
       token: this.jwtService.sign(payload),
     };
   }
-  async findAllUsers(params: {
-    user_name?: string;
-    email?: string;
-    documento?: string;
-    limit?: number;
-    skip?: number;
-    company_id?: number; // Para filtrar por empresa
-  }, requesterCompanyId?: number) {
+  async findAllUsers(
+    params: {
+      user_name?: string;
+      email?: string;
+      documento?: string;
+      limit?: number;
+      skip?: number;
+      company_id?: number; // Para filtrar por empresa
+    }, 
+    requesterCompanyId?: number,
+    requesterId?: number,
+    requesterRoles?: string[]
+  ) {
     const { user_name, email, documento, limit, skip, company_id } = params;
 
     const whereConditions: any = {};
@@ -158,12 +184,19 @@ export class AuthService {
       whereConditions.documento = ILike(`%${documento}%`);
     }
 
+    // 🔒 FILTRADO ESPECIAL PARA sub_admin: solo puede ver los usuarios que él creó
+    const isSubAdmin = requesterRoles?.includes(ValidRoles.sub_admin);
+    if (isSubAdmin && requesterId) {
+      whereConditions.created_by_id = requesterId;
+      this.logger.log(`🔒 Filtrado para sub_admin (ID: ${requesterId}): solo usuarios creados por él`);
+    }
+
     // Filtrar por company_id si se proporciona (super_user puede filtrar)
     // O si el requester es admin, solo ver su empresa
     if (company_id !== undefined) {
       whereConditions.company = { id: company_id };
-    } else if (requesterCompanyId !== undefined && requesterCompanyId !== null) {
-      // Admin solo ve usuarios de su empresa
+    } else if (requesterCompanyId !== undefined && requesterCompanyId !== null && !isSubAdmin) {
+      // Admin solo ve usuarios de su empresa (sub_admin ya está filtrado por created_by_id)
       whereConditions.company = { id: requesterCompanyId };
     }
 
@@ -211,7 +244,7 @@ export class AuthService {
       throw new NotFoundException(`Usuario con ID ${id} no encontrado`);
     }
 
-    // 🔒 VALIDACIÓN DE SEGURIDAD: Admin solo puede activar/desactivar usuarios con rol "user"
+    // 🔒 VALIDACIÓN DE SEGURIDAD: Admin y sub_admin solo pueden activar/desactivar usuarios con rol "user" o "sub_admin"
     const isRequesterSuperUser = requesterRoles?.includes(ValidRoles.super_user);
     const userRoles = Array.isArray(user.roles) ? user.roles : [user.roles];
     const isUserAdminOrSuper = userRoles.some(role => 
@@ -303,7 +336,7 @@ export class AuthService {
     if (!user) throw new NotFoundException(`User with id ${userId} not found`);
 
     // Validar que los roles sean válidos
-    const validRoles = ['user', 'admin', 'super_user'];
+    const validRoles = ['user', 'admin', 'super_user', 'sub_admin'];
     const rolesInvalidos = roles.filter(r => !validRoles.includes(r));
     if (rolesInvalidos.length > 0) {
       throw new BadRequestException(`Roles inválidos: ${rolesInvalidos.join(', ')}`);

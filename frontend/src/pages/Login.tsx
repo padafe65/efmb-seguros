@@ -37,15 +37,14 @@ const handleLogin = async (e: React.FormEvent) => {
     // GUARDAR ROL CON EL NOMBRE CORRECTO
     localStorage.setItem("rol", rol);
     // Guardar ID y Roles correctamente
-localStorage.setItem("id_user", payload.id_user);
-localStorage.setItem("rol", payload.roles[0]);
+    localStorage.setItem("id_user", payload.id?.toString() || "");
 
     localStorage.setItem("user_name", data.Details.UserDetails.name);
     localStorage.setItem("email", data.Details.UserDetails.email);
 
     if (rol === "user") {
       navigate("/dashboard-user", { replace: true });
-    } else if (rol === "admin") {
+    } else if (rol === "admin" || rol === "sub_admin") {
       navigate("/dashboard-admin", { replace: true });
     } else if (rol === "super_user") {
       navigate("/dashboard-super", { replace: true });

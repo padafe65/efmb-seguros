@@ -24,6 +24,14 @@ export class CreateCompanyDto {
 
   @IsOptional()
   @IsString()
+  whatsapp_number?: string;
+
+  @IsOptional()
+  @IsString()
+  facebook_url?: string;
+
+  @IsOptional()
+  @IsString()
   logo_url?: string;
 
   @IsOptional()

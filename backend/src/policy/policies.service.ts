@@ -1,42 +1,57 @@
 // src/policy/policies.service.ts
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { addMonths, startOfDay, endOfDay } from 'date-fns';
-import { Between } from 'typeorm';
+import { Between, ArrayContains } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { PolicyEntity } from './entities/policy.entity';
 import { Repository } from 'typeorm';
 import { CreatePolicyDto } from './dto/create-policy.dto';
 import { UpdatePolicyDto } from './dto/update-policy.dto';
 import { UsersEntity } from 'src/auth/entities/users.entity';
+import { CompanyEntity } from 'src/companies/entities/company.entity';
 import { addYears } from 'date-fns';
 import { NotificationsService } from 'src/notifications/notifications.service';
 import { WhatsappService } from 'src/whatsapp/whatsapp.service';
+import { ValidRoles } from 'src/auth/interfaces/valid-roles';
 
 @Injectable()
-export class PoliciesService {
+export class PoliciesService implements OnModuleInit {
   private readonly logger = new Logger('PoliciesService');
 
   constructor(
     @InjectRepository(PolicyEntity)
     private readonly policyRepository: Repository<PolicyEntity>,
-
     @InjectRepository(UsersEntity)
     private readonly userRepository: Repository<UsersEntity>,
+    @InjectRepository(CompanyEntity)
+    private readonly companyRepository: Repository<CompanyEntity>,
     private readonly notificationsService: NotificationsService,
     private readonly whatsappService: WhatsappService,
   ) {}
+
+  // Ejecutar al iniciar la aplicación
+  async onModuleInit() {
+    this.logger.log('🚀 Módulo de políticas inicializado. Verificando pólizas por vencer...');
+    // Esperar 5 segundos para que la base de datos esté lista
+    setTimeout(() => {
+      this.verificarPolizasPorVencer();
+    }, 5000);
+  }
 
   @Cron('0 8 * * *') // todos los días 8am
   async verificarPolizasPorVencer() {
     this.logger.log('🕐 Verificando pólizas por vencer');
 
     const hoy = startOfDay(new Date());
+    // Buscar pólizas que vencen en menos de un mes (hoy hasta dentro de un mes)
     const enUnMes = endOfDay(addMonths(new Date(), 1));
 
     const polizas = await this.policyRepository.find({
@@ -44,10 +59,10 @@ export class PoliciesService {
         fin_vigencia: Between(hoy, enUnMes),
         notificada: false,
       },
-      relations: ['user'],
+      relations: ['user', 'company'],
     });
 
-    this.logger.log(`📄 Pólizas encontradas: ${polizas.length}`);
+    this.logger.log(`📄 Pólizas encontradas por vencer (menos de un mes): ${polizas.length}`);
 
     for (const poliza of polizas) {
       this.logger.log(`🔔 Avisando póliza ${poliza.policy_number}`);
@@ -56,10 +71,21 @@ export class PoliciesService {
   }
 
   async enviarAvisos(policy: PolicyEntity) {
-    const mensaje = `
+    const fechaVencimiento = new Date(policy.fin_vigencia).toLocaleDateString('es-ES');
+    const diasRestantes = Math.ceil((new Date(policy.fin_vigencia).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+    
+    const mensajeUsuario = `
 Hola ${policy.user.user_name},
-Tu póliza ${policy.policy_number} vence el ${policy.fin_vigencia}.
+Tu póliza ${policy.policy_number} vence el ${fechaVencimiento} (en ${diasRestantes} días).
 Comunícate con Seguros MAB para renovarla.
+`;
+
+    const mensajeAdmin = `
+ALERTA: Póliza próxima a vencer
+Póliza: ${policy.policy_number}
+Usuario: ${policy.user.user_name} (${policy.user.email})
+Vence el: ${fechaVencimiento} (en ${diasRestantes} días)
+Empresa: ${policy.company?.nombre || 'Sin empresa asignada'}
 `;
 
     // 📧 Email usuario
@@ -67,8 +93,9 @@ Comunícate con Seguros MAB para renovarla.
       if (policy.user.email) {
         await this.notificationsService.enviarCorreo(
           policy.user.email,
-          mensaje,
+          mensajeUsuario,
         );
+        this.logger.log(`✅ Email enviado a usuario: ${policy.user.email}`);
       }
     } catch (error) {
       this.logger.error(
@@ -77,22 +104,78 @@ Comunícate con Seguros MAB para renovarla.
       );
     }
 
-    // 📧 Email admin
+    // 🔍 Buscar admin de la empresa asociada (una sola vez para usar en email y WhatsApp)
+    let adminEmail: string | null = null;
+    let adminPhone: string | null = null;
+    
     try {
-      if (process.env.ADMIN_EMAIL) {
+      // Buscar admin de la empresa asociada a la póliza
+      if (policy.company?.id) {
+        // Buscar usuario admin de la compañía (roles es un array, usar ArrayContains)
+        const admin = await this.userRepository.findOne({
+          where: {
+            company: { id: policy.company.id },
+            roles: ArrayContains([ValidRoles.admin]),
+            isactive: true,
+          },
+          relations: ['company'],
+        });
+        
+        if (admin) {
+          adminEmail = admin.email || null;
+          adminPhone = admin.telefono || null;
+          this.logger.log(`👤 Admin encontrado: ${admin.email || 'sin email'} (empresa: ${admin.company?.nombre || 'sin empresa'})`);
+        } else {
+          this.logger.log(`⚠️ No se encontró admin activo para la empresa ID: ${policy.company.id}`);
+        }
+      }
+      
+      // Si no hay admin encontrado, usar el email de la compañía como fallback
+      if (!adminEmail && policy.company?.email) {
+        adminEmail = policy.company.email;
+        this.logger.log(`📧 Usando email de la compañía como fallback: ${adminEmail}`);
+      }
+      
+      // Si todavía no hay email, usar el email genérico del admin
+      if (!adminEmail && process.env.ADMIN_EMAIL) {
+        adminEmail = process.env.ADMIN_EMAIL;
+        this.logger.log(`📧 Usando email genérico del admin: ${adminEmail}`);
+      }
+      
+      // Si no hay teléfono del admin, usar el teléfono de la compañía o el genérico
+      if (!adminPhone) {
+        if (policy.company?.telefono) {
+          adminPhone = policy.company.telefono;
+          this.logger.log(`📲 Usando teléfono de la compañía como fallback: ${adminPhone}`);
+        } else if (process.env.ADMIN_PHONE) {
+          adminPhone = process.env.ADMIN_PHONE;
+          this.logger.log(`📲 Usando teléfono genérico del admin: ${adminPhone}`);
+        }
+      }
+    } catch (error) {
+      this.logger.error('❌ Error buscando admin de la empresa', error);
+    }
+
+    // 📧 Email admin de la empresa asociada
+    try {
+      if (adminEmail) {
         await this.notificationsService.enviarCorreo(
-          process.env.ADMIN_EMAIL,
-          mensaje,
+          adminEmail,
+          mensajeAdmin,
         );
+        this.logger.log(`✅ Email enviado al admin: ${adminEmail}`);
+      } else {
+        this.logger.warn(`⚠️ No se encontró email del admin para la póliza ${policy.policy_number}`);
       }
     } catch (error) {
       this.logger.error('❌ Error enviando email al admin', error);
     }
 
-    // 📲 WhatsApp usuario
+    // 📲 WhatsApp usuario (solo si está desplegado)
     try {
-      if (policy.user.telefono) {
-        await this.whatsappService.enviar(policy.user.telefono, mensaje);
+      if (policy.user.telefono && process.env.WHATSAPP_ENABLED === 'true') {
+        await this.whatsappService.enviar(policy.user.telefono, mensajeUsuario);
+        this.logger.log(`✅ WhatsApp enviado a usuario: ${policy.user.telefono}`);
       }
     } catch (error) {
       this.logger.error(
@@ -101,10 +184,13 @@ Comunícate con Seguros MAB para renovarla.
       );
     }
 
-    // 📲 WhatsApp admin
+    // 📲 WhatsApp admin (solo si está desplegado)
     try {
-      if (process.env.ADMIN_PHONE) {
-        await this.whatsappService.enviar(process.env.ADMIN_PHONE, mensaje);
+      if (adminPhone && process.env.WHATSAPP_ENABLED === 'true') {
+        await this.whatsappService.enviar(adminPhone, mensajeAdmin);
+        this.logger.log(`✅ WhatsApp enviado al admin: ${adminPhone}`);
+      } else if (!adminPhone) {
+        this.logger.warn(`⚠️ No se encontró teléfono del admin para WhatsApp (póliza ${policy.policy_number})`);
       }
     } catch (error) {
       this.logger.error('❌ Error WhatsApp admin', error);
@@ -113,9 +199,10 @@ Comunícate con Seguros MAB para renovarla.
     // 🔐 Marcar como notificada SOLO si pasó por aquí
     policy.notificada = true;
     await this.policyRepository.save(policy);
+    this.logger.log(`✅ Póliza ${policy.policy_number} marcada como notificada`);
   }
 
-  async create(dto: CreatePolicyDto, creatorCompanyId?: number) {
+  async create(dto: CreatePolicyDto, creatorCompanyId?: number, creatorId?: number, creatorRole?: string) {
     try {
       const user = await this.userRepository.findOne({
         where: { id: +dto.user_id },
@@ -144,6 +231,13 @@ Comunícate con Seguros MAB para renovarla.
         policyData.company = { id: companyId } as any;
       }
 
+      // Guardar información del creador (admin o sub_admin)
+      if (creatorId && creatorRole) {
+        policyData.created_by_id = creatorId;
+        policyData.created_by_role = creatorRole;
+        this.logger.log(`📝 Póliza creada por ${creatorRole} (ID: ${creatorId})`);
+      }
+
       const policy = this.policyRepository.create(policyData);
 
       const saved = await this.policyRepository.save(policy);
@@ -156,14 +250,19 @@ Comunícate con Seguros MAB para renovarla.
     }
   }
 
-  async findAllWithFilters(params: {
-    userId?: string;
-    policyNumber?: string;
-    placa?: string;
-    limit?: number;
-    skip?: number;
-    company_id?: number; // Para filtrar por empresa
-  }, requesterCompanyId?: number) {
+  async findAllWithFilters(
+    params: {
+      userId?: string;
+      policyNumber?: string;
+      placa?: string;
+      limit?: number;
+      skip?: number;
+      company_id?: number; // Para filtrar por empresa
+    }, 
+    requesterCompanyId?: number,
+    requesterId?: number,
+    requesterRoles?: string[]
+  ) {
     try {
       const { userId, policyNumber, placa, limit, skip, company_id } = params;
 
@@ -173,6 +272,17 @@ Comunícate con Seguros MAB para renovarla.
         .leftJoinAndSelect('policy.company', 'company')
         .skip(skip || 0)
         .take(limit || 100);
+
+      // 🔒 FILTRADO ESPECIAL PARA sub_admin: solo puede ver las pólizas que él creó
+      const isSubAdmin = requesterRoles?.includes(ValidRoles.sub_admin);
+      if (isSubAdmin && requesterId) {
+        // Solo mostrar pólizas donde created_by_id sea igual al ID del sub_admin
+        // Si created_by_id es null, no se mostrará (pólizas antiguas sin creador)
+        query.andWhere('policy.created_by_id = :creatorId', { creatorId: requesterId });
+        this.logger.log(`🔒 Filtrado para sub_admin (ID: ${requesterId}, Roles: ${requesterRoles?.join(', ')}): solo pólizas creadas por él`);
+      } else if (isSubAdmin && !requesterId) {
+        this.logger.warn(`⚠️ sub_admin sin requesterId - no se puede aplicar filtro de created_by_id`);
+      }
 
       if (userId) {
         query.andWhere('user.id = :uid', { uid: Number(userId) });
@@ -199,13 +309,25 @@ Comunícate con Seguros MAB para renovarla.
         query.andWhere('company.id = :cid', { cid: filterCompanyId });
       }
 
-      return await query.getMany();
+      const policies = await query.getMany();
+      
+      // Log para debugging - verificar que user_name esté presente
+      if (policies.length > 0) {
+        this.logger.debug(`📋 Pólizas encontradas: ${policies.length}`);
+        this.logger.debug(`👤 Ejemplo de usuario en póliza: ${JSON.stringify({
+          id: policies[0].user?.id,
+          user_name: policies[0].user?.user_name,
+          email: policies[0].user?.email
+        })}`);
+      }
+      
+      return policies;
     } catch (error) {
       this.handlerErrors(error);
     }
   }
 
-  async findOne(id_policy: number) {
+  async findOne(id_policy: number, requesterId?: number) {
     const policy = await this.policyRepository.findOne({
       where: { id_policy },
       relations: ['user'],
@@ -213,6 +335,12 @@ Comunícate con Seguros MAB para renovarla.
 
     if (!policy)
       throw new NotFoundException(`Policy with id ${id_policy} not found`);
+
+    // Si se proporciona requesterId, verificar que sea el creador (para sub_admin)
+    if (requesterId !== undefined && policy.created_by_id !== requesterId) {
+      this.logger.warn(`⚠️ Intento de acceso a póliza ${id_policy} por usuario ${requesterId} que no es el creador`);
+      throw new ForbiddenException('No tienes permisos para ver esta póliza. Solo puedes ver las pólizas que creaste.');
+    }
 
     return policy;
   }
@@ -233,7 +361,7 @@ Comunícate con Seguros MAB para renovarla.
     });
   }
 
-  async update(id_policy: number, dto: UpdatePolicyDto) {
+  async update(id_policy: number, dto: UpdatePolicyDto, requesterId?: number) {
     console.log('DTO RECIBIDO EN UPDATE:', dto);
     try {
       const { user_id, fin_vigencia, ...rest } = dto as any;
@@ -251,6 +379,12 @@ Comunícate con Seguros MAB para renovarla.
       if (!policy)
         throw new NotFoundException(`Policy with id ${id_policy} not found`);
 
+      // Si se proporciona requesterId, verificar que sea el creador (para sub_admin)
+      if (requesterId !== undefined && policy.created_by_id !== requesterId) {
+        this.logger.warn(`⚠️ Intento de editar póliza ${id_policy} por usuario ${requesterId} que no es el creador`);
+        throw new ForbiddenException('No tienes permisos para editar esta póliza. Solo puedes editar las pólizas que creaste.');
+      }
+
       if (user_id) {
         const user = await this.userRepository.findOneBy({ id: +user_id });
         if (!user)
@@ -265,9 +399,21 @@ Comunícate con Seguros MAB para renovarla.
     }
   }
 
-  async remove(id_policy: number) {
+  async remove(id_policy: number, requesterId?: number) {
     try {
-      const policy = await this.findOne(id_policy);
+      const policy = await this.policyRepository.findOne({
+        where: { id_policy },
+      });
+
+      if (!policy)
+        throw new NotFoundException(`Policy with id ${id_policy} not found`);
+
+      // Si se proporciona requesterId, verificar que sea el creador (para sub_admin)
+      if (requesterId !== undefined && policy.created_by_id !== requesterId) {
+        this.logger.warn(`⚠️ Intento de eliminar póliza ${id_policy} por usuario ${requesterId} que no es el creador`);
+        throw new ForbiddenException('No tienes permisos para eliminar esta póliza. Solo puedes eliminar las pólizas que creaste.');
+      }
+
       await this.policyRepository.delete({ id_policy });
       return `Policy with id ${id_policy} was deleted`;
     } catch (error) {

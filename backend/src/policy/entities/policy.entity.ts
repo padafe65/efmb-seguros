@@ -94,5 +94,12 @@ export class PolicyEntity {
   @JoinColumn({ name: 'company_id' })
   company?: CompanyEntity;
 
+  // Campo para almacenar quién creó/vendió la póliza
+  @Column('integer', { nullable: true, name: 'created_by_id' })
+  created_by_id: number;
+
+  @Column('text', { nullable: true, name: 'created_by_role' })
+  created_by_role: string; // 'admin' o 'sub_admin'
+
   // puedes agregar otros campos vehiculares que mencionaste...
 }

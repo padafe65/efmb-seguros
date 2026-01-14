@@ -62,6 +62,12 @@ export class CompaniesController {
     return this.companiesService.findAll(includeInactive);
   }
 
+  // Endpoint público para obtener solo compañías activas (para selector en Home)
+  @Get('public/active')
+  findActivePublic() {
+    return this.companiesService.findAll(false);
+  }
+
   @Get(':id')
   @Auth(ValidRoles.user, ValidRoles.admin, ValidRoles.super_user)
   findOne(@Param('id', ParseIntPipe) id: number) {
@@ -103,6 +109,8 @@ export class CompaniesController {
       direccion: updateDto.direccion || undefined,
       telefono: updateDto.telefono || undefined,
       email: updateDto.email || undefined,
+      whatsapp_number: updateDto.whatsapp_number || undefined,
+      facebook_url: updateDto.facebook_url || undefined,
       logo_url: updateDto.logo_url || undefined,
       color_primario: updateDto.color_primario || undefined,
       color_secundario: updateDto.color_secundario || undefined,

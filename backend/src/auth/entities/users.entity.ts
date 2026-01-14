@@ -42,6 +42,9 @@ export class UsersEntity {
   @Column('text', { nullable: true })
   representante_legal: string;
 
+  @Column('text', { nullable: true, name: 'facebook_url' })
+  facebook_url: string;
+
   @Column('date', { nullable: true })
   fecha_nacimiento: Date;
 
@@ -63,6 +66,10 @@ export class UsersEntity {
   @ManyToOne(() => CompanyEntity, { nullable: true, eager: false })
   @JoinColumn({ name: 'company_id' })
   company?: CompanyEntity;
+
+  // Campo para almacenar quién creó al usuario (admin o sub_admin)
+  @Column('integer', { nullable: true, name: 'created_by_id' })
+  created_by_id: number;
 
   @OneToMany(() => PolicyEntity, (policy) => policy.user)
   policies: PolicyEntity[];

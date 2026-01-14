@@ -177,8 +177,26 @@ export class ContactService {
     }
   }
 
-  async findAll(requesterCompanyId?: number) {
+  async findAll(requesterCompanyId?: number, requesterId?: number, requesterRoles?: string[]) {
     const whereConditions: any = {};
+
+    // 🔒 FILTRADO ESPECIAL PARA sub_admin: solo puede ver mensajes de usuarios que él creó
+    const isSubAdmin = requesterRoles?.includes('sub_admin');
+    if (isSubAdmin && requesterId) {
+      // Filtrar mensajes donde el usuario que envió el mensaje fue creado por el sub_admin
+      // Necesitamos hacer un join con la tabla users para verificar created_by_id
+      const messages = await this.contactMessageRepository
+        .createQueryBuilder('message')
+        .leftJoinAndSelect('message.user', 'user')
+        .leftJoinAndSelect('message.responded_by_user', 'responded_by_user')
+        .leftJoinAndSelect('message.company', 'company')
+        .where('user.created_by_id = :requesterId', { requesterId })
+        .orderBy('message.created_at', 'DESC')
+        .getMany();
+      
+      this.logger.log(`🔒 Filtrado para sub_admin (ID: ${requesterId}): solo mensajes de usuarios creados por él`);
+      return messages;
+    }
 
     // Si el requester es admin, solo ver mensajes de su empresa
     if (requesterCompanyId !== undefined && requesterCompanyId !== null) {

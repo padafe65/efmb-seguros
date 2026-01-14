@@ -33,6 +33,8 @@ export class CompaniesService {
         direccion: createDto.direccion,
         telefono: createDto.telefono,
         email: createDto.email,
+        whatsapp_number: createDto.whatsapp_number,
+        facebook_url: createDto.facebook_url,
         logo_url: logoUrl,
         color_primario: createDto.color_primario || '#631025',
         color_secundario: createDto.color_secundario || '#4c55d3',

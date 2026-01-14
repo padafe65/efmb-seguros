@@ -47,29 +47,36 @@ export class ContactController {
 
   // Endpoints protegidos para administradores
   @Get('messages')
-  @Auth(ValidRoles.admin, ValidRoles.super_user)
+  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
   async getAllMessages(@GetUser() user: any) {
-    // Super_user ve todos, admin solo ve su empresa
-    const requesterCompanyId = user.roles?.includes('super_user')
+    // Super_user ve todos, admin ve su empresa, sub_admin solo ve mensajes de usuarios que creó
+    const isSuperUser = user.roles?.includes('super_user');
+    const isSubAdmin = user.roles?.includes('sub_admin');
+    
+    const requesterCompanyId = isSuperUser
       ? undefined
       : (user.company?.id || user.company_id);
-    return this.contactService.findAll(requesterCompanyId);
+    
+    const requesterId = isSubAdmin ? user.id : undefined;
+    const requesterRoles = user.roles;
+    
+    return this.contactService.findAll(requesterCompanyId, requesterId, requesterRoles);
   }
 
   @Get('messages/:id')
-  @Auth(ValidRoles.admin, ValidRoles.super_user)
+  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
   async getMessage(@Param('id', ParseIntPipe) id: number) {
     return this.contactService.findOne(id);
   }
 
   @Patch('messages/:id/read')
-  @Auth(ValidRoles.admin, ValidRoles.super_user)
+  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
   async markAsRead(@Param('id', ParseIntPipe) id: number) {
     return this.contactService.markAsRead(id);
   }
 
   @Patch('messages/:id/respond')
-  @Auth(ValidRoles.admin, ValidRoles.super_user)
+  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
   async respondToMessage(
     @Param('id', ParseIntPipe) id: number,
     @Body() respondDto: RespondMessageDto,
@@ -79,7 +86,7 @@ export class ContactController {
   }
 
   @Delete('messages/:id')
-  @Auth(ValidRoles.admin, ValidRoles.super_user)
+  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
   async deleteMessage(@Param('id', ParseIntPipe) id: number) {
     return this.contactService.deleteMessage(id);
   }

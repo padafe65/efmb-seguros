@@ -23,6 +23,12 @@ export class CompanyEntity {
   @Column('text', { nullable: true })
   email: string;
 
+  @Column('text', { nullable: true, name: 'whatsapp_number' })
+  whatsapp_number: string;
+
+  @Column('text', { nullable: true, name: 'facebook_url' })
+  facebook_url: string;
+
   @Column('text', { nullable: true, name: 'logo_url' })
   logo_url: string;
 

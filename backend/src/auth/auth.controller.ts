@@ -18,24 +18,29 @@ import { CreateUserDTO } from './dto/create-user.dto';
 import { LoginUserDTO } from './dto/login-user.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { GetUser } from './decorators/get-user/get-user.decorator';
+import { GetUserOptional } from './decorators/get-user-optional/get-user-optional.decorator';
 import { ValidRoles } from './interfaces/valid-roles';
 import { UserRolesGuard } from './guards/user-roles/user-roles.guard';
 import { RoleProtected } from './decorators/role-protected/role-protected.decorator';
 import { UpdateUserDTO } from './dto/update-user.dto';
 import { Auth } from './decorators/auth.decorator';
 import { PaginationDto } from 'src/common/dto/pagination.dto';
+import { OptionalJwtAuthGuard } from './guards/optional-jwt/optional-jwt.guard';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  registerUser(@Body() createUserDto: CreateUserDTO, @GetUser() user?: any) {
-    // Si el usuario está logueado (admin), asignar su company_id
+  @UseGuards(OptionalJwtAuthGuard)
+  registerUser(@Body() createUserDto: CreateUserDTO, @GetUserOptional() user?: any) {
+    // Si el usuario está logueado (admin o super_user), asignar su company_id
     const companyId = user?.company?.id || user?.company_id || undefined;
     // Pasar los roles del creador para validación de seguridad
     const creatorRoles = user?.roles || undefined;
-    return this.authService.createUser(createUserDto, companyId, creatorRoles);
+    // Pasar el ID del creador para guardar quién creó el usuario
+    const creatorId = user?.id || undefined;
+    return this.authService.createUser(createUserDto, companyId, creatorRoles, creatorId);
   }
 
   @Post('login')
@@ -50,7 +55,7 @@ export class AuthController {
   }
 
   @Get('users')
-  @Auth(ValidRoles.admin, ValidRoles.super_user)
+  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
   getAllUsers(@Query() query: any, @GetUser() user: any) {
     const { user_name, email, documento, limit, skip, company_id } = query;
 
@@ -58,6 +63,10 @@ export class AuthController {
     const requesterCompanyId = user.roles?.includes('super_user') 
       ? (company_id ? Number(company_id) : undefined)
       : (user.company?.id || user.company_id);
+    
+    // Pasar información del usuario para filtrado (sub_admin solo ve usuarios que creó)
+    const requesterId = user?.id;
+    const requesterRoles = user?.roles || [];
 
     return this.authService.findAllUsers({
       user_name,
@@ -66,7 +75,7 @@ export class AuthController {
       limit: limit ? Number(limit) : undefined,
       skip: skip ? Number(skip) : undefined,
       company_id: company_id ? Number(company_id) : undefined,
-    }, requesterCompanyId);
+    }, requesterCompanyId, requesterId, requesterRoles);
   }
 
   // Nuevo: obtener usuario por id (sin password)
@@ -76,7 +85,7 @@ export class AuthController {
   }
 
   @Get('search')
-  @Auth(ValidRoles.admin, ValidRoles.super_user)
+  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
   search(@Query('q') q: string, @GetUser() user: any) {
     const requesterCompanyId = user.roles?.includes('super_user') 
       ? undefined 
@@ -86,7 +95,7 @@ export class AuthController {
 
   // Admin: actualizar cualquier usuario (NO puede cambiar password)
   @Patch('update/:id')
-  @Auth(ValidRoles.admin, ValidRoles.super_user)
+  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
   async updateUserAdmin(
     @Param('id') id: number,
     @Body() updateUserDto: UpdateUserDTO,
@@ -107,7 +116,7 @@ export class AuthController {
 
   // Activar/Desactivar usuario
   @Patch('users/:id/toggle-status')
-  @Auth(ValidRoles.admin, ValidRoles.super_user)
+  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
   async toggleUserStatus(
     @Param('id', ParseIntPipe) id: number,
     @GetUser() requester: any,

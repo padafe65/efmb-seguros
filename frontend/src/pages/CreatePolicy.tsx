@@ -268,6 +268,7 @@ export default function CreatePolicy(props: CreatePolicyProps): JSX.Element {
   const [productType, setProductType] =
     useState<"productos" | "autos">("productos");
   const [userData, setUserData] = useState<any>(null);
+  const [companyData, setCompanyData] = useState<any>(null);
   const [isPolicyExpired, setIsPolicyExpired] = useState(false);
 
   // -------------------------------------------------------
@@ -481,16 +482,23 @@ const handleSubmit = async (e: React.FormEvent) => {
 
   // Verificar permisos de edición
   const rol = localStorage.getItem("rol");
+  
+  // user NO puede crear pólizas, solo editar las suyas (si no están vencidas)
+  const canCreate = isCreate && (rol === "admin" || rol === "super_user" || rol === "sub_admin");
   const canEdit = !isView && (
     rol === "admin" || 
     rol === "super_user" || 
-    (rol === "user" && !isPolicyExpired)
+    rol === "sub_admin" ||
+    (rol === "user" && !isPolicyExpired && !isCreate) // user solo puede editar, no crear
   );
-  const isAdminOrSuper = rol === "admin" || rol === "super_user";
+  const isAdminOrSuper = rol === "admin" || rol === "super_user" || rol === "sub_admin";
 
   // Si es usuario normal y la póliza está vencida, forzar modo vista
-  const effectiveIsView = isView || (rol === "user" && isPolicyExpired && !isAdminOrSuper);
-  const effectiveCanEdit = canEdit && !effectiveIsView;
+  // Si es user intentando crear, también forzar vista (no puede crear)
+  const effectiveIsView = isView || 
+    (rol === "user" && isPolicyExpired && !isAdminOrSuper) ||
+    (rol === "user" && isCreate); // user no puede crear
+  const effectiveCanEdit = (canCreate || canEdit) && !effectiveIsView;
 
   const handlePrintPDF = () => {
     generatePDF(form, userData, companyData);
@@ -596,25 +604,13 @@ const handleSubmit = async (e: React.FormEvent) => {
           onChange={handleChange}
         />
 
+        <label>Fin vigencia</label>
         <input
           type="date"
           name="fin_vigencia"
-          value={form.fin_vigencia}
           disabled
+          value={form.fin_vigencia}
         />
-
-
-        {!isCreate && (
-          <>
-            <label>Fin vigencia</label>
-            <input
-              type="date"
-              name="fin_vigencia"
-              disabled
-              value={form.fin_vigencia}
-            />
-          </>
-        )}
 
 
         <label>Tipo de cliente</label>

@@ -4,6 +4,7 @@ import API from "../api/axiosConfig";
 import { useNavigate } from "react-router-dom";
 import "../App.css";
 import { logout } from "../utils/logout";
+import { getRoleLabel } from "../utils/getRoleLabel";
 
 type User = {
   id: number;
@@ -47,6 +48,7 @@ export default function DashboardSuperUser(): JSX.Element {
   const [responseText, setResponseText] = useState<string>("");
   const [showResponseModal, setShowResponseModal] = useState(false);
   const [companies, setCompanies] = useState<any[]>([]);
+  const [filterMessageCompany, setFilterMessageCompany] = useState<string>("");
   const [filterCompanyId, setFilterCompanyId] = useState<string>("");
   const [editingCompanyData, setEditingCompanyData] = useState<any>(null);
   const [companyForm, setCompanyForm] = useState<any>({
@@ -55,6 +57,8 @@ export default function DashboardSuperUser(): JSX.Element {
     direccion: "",
     telefono: "",
     email: "",
+    whatsapp_number: "",
+    facebook_url: "",
     logo_url: "",
     color_primario: "#631025",
     color_secundario: "#4c55d3",
@@ -343,6 +347,8 @@ export default function DashboardSuperUser(): JSX.Element {
       direccion: company.direccion || "",
       telefono: company.telefono || "",
       email: company.email || "",
+      whatsapp_number: company.whatsapp_number || "",
+      facebook_url: company.facebook_url || "",
       logo_url: company.logo_url || "",
       color_primario: company.color_primario || "#631025",
       color_secundario: company.color_secundario || "#4c55d3",
@@ -365,6 +371,8 @@ export default function DashboardSuperUser(): JSX.Element {
       if (companyForm.direccion) formData.append('direccion', companyForm.direccion);
       if (companyForm.telefono) formData.append('telefono', companyForm.telefono);
       if (companyForm.email) formData.append('email', companyForm.email);
+      if (companyForm.whatsapp_number) formData.append('whatsapp_number', companyForm.whatsapp_number);
+      if (companyForm.facebook_url) formData.append('facebook_url', companyForm.facebook_url);
       if (companyForm.color_primario) formData.append('color_primario', companyForm.color_primario);
       if (companyForm.color_secundario) formData.append('color_secundario', companyForm.color_secundario);
 
@@ -398,6 +406,8 @@ export default function DashboardSuperUser(): JSX.Element {
         direccion: "",
         telefono: "",
         email: "",
+        whatsapp_number: "",
+        facebook_url: "",
         logo_url: "",
         color_primario: "#631025",
         color_secundario: "#4c55d3",
@@ -461,11 +471,18 @@ export default function DashboardSuperUser(): JSX.Element {
 
   const stats = getStats();
 
+  const rol = localStorage.getItem("rol");
+  const userName = localStorage.getItem("user_name") || "Usuario";
+  const roleLabel = getRoleLabel(rol);
+
   return (
     <div className="admin-container" style={{ padding: 24 }}>
       <div className="admin-header">
-        <h2>Panel Super Usuario</h2>
-        <p style={{ color: "#666", marginTop: 8 }}>
+        <h2>Panel {roleLabel}</h2>
+        <p style={{ color: "#666", marginTop: 8, fontSize: "16px" }}>
+          👤 {userName}
+        </p>
+        <p style={{ color: "#666", marginTop: 4, fontSize: "14px" }}>
           Acceso completo al sistema - Gestión de usuarios, pólizas y roles
         </p>
       </div>
@@ -900,6 +917,8 @@ export default function DashboardSuperUser(): JSX.Element {
                   direccion: "",
                   telefono: "",
                   email: "",
+                  whatsapp_number: "",
+                  facebook_url: "",
                   logo_url: "",
                   color_primario: "#631025",
                   color_secundario: "#4c55d3",
@@ -954,6 +973,19 @@ export default function DashboardSuperUser(): JSX.Element {
                   type="email"
                   value={companyForm.email}
                   onChange={(e) => setCompanyForm({...companyForm, email: e.target.value})}
+                />
+                <input
+                  className="admin-input"
+                  placeholder="Número de WhatsApp (ej: 573026603858)"
+                  value={companyForm.whatsapp_number}
+                  onChange={(e) => setCompanyForm({...companyForm, whatsapp_number: e.target.value})}
+                />
+                <input
+                  className="admin-input"
+                  placeholder="URL de Facebook (ej: https://www.facebook.com/tu-pagina)"
+                  type="url"
+                  value={companyForm.facebook_url}
+                  onChange={(e) => setCompanyForm({...companyForm, facebook_url: e.target.value})}
                 />
                 <div style={{ gridColumn: "1 / -1" }}>
                   <label style={{ display: "block", marginBottom: "8px", fontWeight: "bold" }}>
@@ -1042,6 +1074,8 @@ export default function DashboardSuperUser(): JSX.Element {
                       direccion: "",
                       telefono: "",
                       email: "",
+                      whatsapp_number: "",
+                      facebook_url: "",
                       logo_url: "",
                       color_primario: "#631025",
                       color_secundario: "#4c55d3",
@@ -1151,6 +1185,32 @@ export default function DashboardSuperUser(): JSX.Element {
       {activeTab === "messages" && (
         <section className="admin-section">
           <h3>💬 Mensajes de Contacto</h3>
+          
+          {/* Filtros */}
+          <div className="admin-filters" style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <label style={{ fontWeight: "bold", minWidth: "120px" }}>Filtrar por Empresa:</label>
+            <select
+              className="admin-input"
+              value={filterMessageCompany}
+              onChange={(e) => setFilterMessageCompany(e.target.value)}
+              style={{ padding: "8px", minWidth: "200px" }}
+            >
+              <option value="">Todas las empresas</option>
+              {companies.map(company => (
+                <option key={company.id} value={company.id}>
+                  {company.nombre}
+                </option>
+              ))}
+            </select>
+            <button 
+              className="admin-btn secondary" 
+              onClick={() => setFilterMessageCompany("")}
+              style={{ padding: "8px 15px" }}
+            >
+              🗑️ Limpiar Filtro
+            </button>
+          </div>
+
           <button className="admin-btn" onClick={loadContactMessages} style={{ marginBottom: "10px" }}>
             🔄 Actualizar Mensajes
           </button>
@@ -1175,7 +1235,16 @@ export default function DashboardSuperUser(): JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {contactMessages.map((msg: any) => (
+                {contactMessages
+                  .filter((msg: any) => {
+                    // Filtrar por compañía si hay un filtro seleccionado
+                    if (filterMessageCompany) {
+                      const companyId = Number(filterMessageCompany);
+                      return msg.company?.id === companyId;
+                    }
+                    return true; // Mostrar todos si no hay filtro
+                  })
+                  .map((msg: any) => (
                   <tr key={msg.id} style={{ background: msg.leido ? "#f0f0f0" : "#fff3cd" }}>
                     <td>{msg.id}</td>
                     <td>{msg.nombre}</td>
@@ -1220,10 +1289,18 @@ export default function DashboardSuperUser(): JSX.Element {
                     </td>
                   </tr>
                 ))}
-                {contactMessages.length === 0 && (
+                {contactMessages.filter((msg: any) => {
+                  if (filterMessageCompany) {
+                    const companyId = Number(filterMessageCompany);
+                    return msg.company?.id === companyId;
+                  }
+                  return true;
+                }).length === 0 && (
                   <tr>
                     <td colSpan={10} className="admin-empty">
-                      No hay mensajes de contacto
+                      {filterMessageCompany 
+                        ? "No hay mensajes de contacto para la empresa seleccionada"
+                        : "No hay mensajes de contacto"}
                     </td>
                   </tr>
                 )}

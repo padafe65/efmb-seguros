@@ -7,7 +7,7 @@ export const navigateToDashboard = (navigate: (path: string) => void) => {
   
   if (rol === "super_user") {
     navigate("/dashboard-super");
-  } else if (rol === "admin") {
+  } else if (rol === "admin" || rol === "sub_admin") {
     navigate("/dashboard-admin");
   } else if (rol === "user") {
     navigate("/dashboard-user");

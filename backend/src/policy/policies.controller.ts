@@ -27,14 +27,21 @@ export class PoliciesController {
   // ===============================
 
   @Post('create')
-  @Auth(ValidRoles.admin, ValidRoles.super_user)
+  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
   create(@Body() dto: CreatePolicyDto, @GetUser() user: any) {
     const companyId = user.company?.id || user.company_id || undefined;
-    return this.policiesService.create(dto, companyId);
+    const creatorId = user.id;
+    const creatorRoles = user.roles || [];
+    // Determinar el rol del creador (admin o sub_admin)
+    const creatorRole = creatorRoles.includes(ValidRoles.super_user) 
+      ? ValidRoles.admin // super_user se considera admin para este propósito
+      : (creatorRoles.includes(ValidRoles.admin) ? ValidRoles.admin : ValidRoles.sub_admin);
+    
+    return this.policiesService.create(dto, companyId, creatorId, creatorRole);
   }
 
   @Get()
-  @Auth(ValidRoles.admin, ValidRoles.super_user)
+  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
   findAll(
     @Query('user_id') user_id?: string,
     @Query('policy_number') policy_number?: string,
@@ -48,6 +55,10 @@ export class PoliciesController {
     const requesterCompanyId = user?.roles?.includes('super_user') 
       ? (company_id ? Number(company_id) : undefined)
       : (user?.company?.id || user?.company_id);
+    
+    // Pasar información del usuario para filtrado (sub_admin solo ve sus propias pólizas)
+    const requesterId = user?.id;
+    const requesterRoles = user?.roles || [];
 
     return this.policiesService.findAllWithFilters({
       userId: user_id,
@@ -56,27 +67,58 @@ export class PoliciesController {
       limit,
       skip,
       company_id: company_id ? Number(company_id) : undefined,
-    }, requesterCompanyId);
+    }, requesterCompanyId, requesterId, requesterRoles);
   }
 
   @Get(':id_policy')
-  @Auth(ValidRoles.admin, ValidRoles.super_user)
-  findOne(@Param('id_policy', ParseIntPipe) id_policy: number) {
+  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
+  findOne(@Param('id_policy', ParseIntPipe) id_policy: number, @GetUser() user?: any) {
+    // Verificar permisos: sub_admin solo puede ver sus propias pólizas
+    const requesterRoles = user?.roles || [];
+    const isSubAdmin = requesterRoles.includes(ValidRoles.sub_admin);
+    
+    if (isSubAdmin) {
+      // Para sub_admin, verificar que la póliza fue creada por él
+      return this.policiesService.findOne(id_policy, user?.id);
+    }
+    
     return this.policiesService.findOne(id_policy);
   }
 
   @Patch(':id_policy')
-  @Auth(ValidRoles.admin, ValidRoles.super_user)
+  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
   update(
     @Param('id_policy', ParseIntPipe) id_policy: number,
     @Body() dto: UpdatePolicyDto,
+    @GetUser() user?: any,
   ) {
+    // Verificar permisos: sub_admin solo puede editar sus propias pólizas
+    const requesterRoles = user?.roles || [];
+    const isSubAdmin = requesterRoles.includes(ValidRoles.sub_admin);
+    
+    if (isSubAdmin) {
+      // Para sub_admin, verificar que la póliza fue creada por él
+      return this.policiesService.update(id_policy, dto, user?.id);
+    }
+    
     return this.policiesService.update(id_policy, dto);
   }
 
   @Delete(':id_policy')
-  @Auth(ValidRoles.admin, ValidRoles.super_user)
-  remove(@Param('id_policy', ParseIntPipe) id_policy: number) {
+  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
+  remove(
+    @Param('id_policy', ParseIntPipe) id_policy: number,
+    @GetUser() user?: any,
+  ) {
+    // Verificar permisos: sub_admin solo puede eliminar sus propias pólizas
+    const requesterRoles = user?.roles || [];
+    const isSubAdmin = requesterRoles.includes(ValidRoles.sub_admin);
+    
+    if (isSubAdmin) {
+      // Para sub_admin, verificar que la póliza fue creada por él
+      return this.policiesService.remove(id_policy, user?.id);
+    }
+    
     return this.policiesService.remove(id_policy);
   }
 

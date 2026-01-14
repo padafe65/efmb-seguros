@@ -48,6 +48,10 @@ export class CreateUserDTO {
   representante_legal?: string;
 
   @IsOptional()
+  @IsString()
+  facebook_url?: string;
+
+  @IsOptional()
   @Type(() => Date)
   @IsDate()
   fecha_nacimiento?: Date;

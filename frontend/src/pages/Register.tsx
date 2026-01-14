@@ -9,9 +9,10 @@ export default function Register(): JSX.Element {
   const navigate = useNavigate();
 
   const isEditing = Boolean(id);
-  const role = localStorage.getItem("rol") || ""; // "admin" | "user" | "super_user"
-  const isAdmin = role === "admin" || role === "super_user";
-  const isSuperUser = role === "super_user"; // Solo super_user puede crear usuarios con roles privilegiados
+  const role = localStorage.getItem("rol") || ""; // "admin" | "user" | "super_user" | "sub_admin"
+  const isAdmin = role === "admin" || role === "super_user" || role === "sub_admin";
+  const isSuperUser = role === "super_user"; // Solo super_user puede crear usuarios con roles privilegiados (admin, super_user)
+  const canCreateSubAdmin = role === "admin" || role === "super_user" || role === "sub_admin"; // Admin, super_user y sub_admin pueden crear sub_admin
 
   const [form, setForm] = useState<any>({
     user_name: "",
@@ -22,6 +23,7 @@ export default function Register(): JSX.Element {
     telefono: "",
     actividad_empresa: "",
     representante_legal: "",
+    facebook_url: "",
     fecha_nacimiento: "",
     roles: ["user"],
     isactive: true,
@@ -49,6 +51,7 @@ export default function Register(): JSX.Element {
         telefono: user.telefono || "",
         actividad_empresa: user.actividad_empresa || "",
         representante_legal: user.representante_legal || "",
+        facebook_url: user.facebook_url || "",
         fecha_nacimiento: user.fecha_nacimiento ? new Date(user.fecha_nacimiento).toISOString().substring(0,10) : "",
         roles: user.roles || ["user"],
         isactive: user.isactive ?? true,
@@ -71,11 +74,19 @@ const handleSubmit = async (e) => {
   try {
     const dataToSend = { ...form };
 
-    // 🔒 Validación de seguridad en frontend: Si no es super_user, forzar rol "user"
-    if (!isSuperUser && !isEditing) {
-      const privilegedRoles = ['admin', 'super_user'];
-      if (dataToSend.roles && dataToSend.roles.some((r: string) => privilegedRoles.includes(r))) {
-        alert("⚠️ No tienes permisos para crear usuarios con roles privilegiados. Se asignará el rol 'user'.");
+    // 🔒 Validación de seguridad en frontend
+    if (!isEditing) {
+      const requestedRole = Array.isArray(dataToSend.roles) ? dataToSend.roles[0] : dataToSend.roles;
+      
+      // Solo super_user puede crear admin o super_user
+      if (!isSuperUser && (requestedRole === 'admin' || requestedRole === 'super_user')) {
+        alert("⚠️ No tienes permisos para crear usuarios con roles privilegiados (admin o super_user). Se asignará el rol 'user'.");
+        dataToSend.roles = ['user'];
+      }
+      
+      // Solo admin y super_user pueden crear sub_admin
+      if (!canCreateSubAdmin && requestedRole === 'sub_admin') {
+        alert("⚠️ No tienes permisos para crear usuarios con rol sub_admin. Se asignará el rol 'user'.");
         dataToSend.roles = ['user'];
       }
     }
@@ -132,6 +143,18 @@ const handleSubmit = async (e) => {
         <label>Representante legal</label>
         <input name="representante_legal" value={form.representante_legal} onChange={handleChange} placeholder="Representante legal" />
 
+        <label>URL de Facebook (opcional)</label>
+        <input 
+          name="facebook_url" 
+          value={form.facebook_url} 
+          onChange={handleChange} 
+          placeholder="https://www.facebook.com/tu-pagina" 
+          type="url"
+        />
+        <small style={{ color: "#666", fontSize: "12px" }}>
+          Ingresa el enlace completo de tu página de Facebook (opcional)
+        </small>
+
         <label>Fecha de nacimiento</label>
         <input name="fecha_nacimiento" value={form.fecha_nacimiento} onChange={handleChange} type="date" />
 
@@ -140,9 +163,12 @@ const handleSubmit = async (e) => {
           name="roles"
           value={Array.isArray(form.roles) ? form.roles[0] : form.roles}
           onChange={(e) => setForm((s:any) => ({ ...s, roles: [e.target.value] }))}
-          disabled={!isSuperUser && !isEditing} // Solo super_user puede asignar roles privilegiados al crear
+          disabled={!isAdmin && !isEditing} // Solo admin, sub_admin y super_user pueden asignar roles al crear
         >
           <option value="user">user</option>
+          {canCreateSubAdmin && (
+            <option value="sub_admin">sub_admin</option>
+          )}
           {isSuperUser && (
             <>
               <option value="admin">admin</option>
@@ -150,9 +176,14 @@ const handleSubmit = async (e) => {
             </>
           )}
         </select>
-        {!isSuperUser && !isEditing && (
+        {!isAdmin && !isEditing && (
           <small style={{ color: "#666", fontSize: "12px" }}>
-            ⚠️ Solo un super_user puede crear usuarios con roles privilegiados. El registro público solo permite crear usuarios con rol "user".
+            ⚠️ El registro público solo permite crear usuarios con rol "user".
+          </small>
+        )}
+        {canCreateSubAdmin && !isSuperUser && !isEditing && (
+          <small style={{ color: "#666", fontSize: "12px" }}>
+            ℹ️ Puedes crear usuarios con rol "user" o "sub_admin". Solo un super_user puede crear "admin" o "super_user".
           </small>
         )}
 

@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import FlipFormCard from "../components/FlipFormCard";
 import API from "../api/axiosConfig";
 import { logout } from "../utils/logout";
+import { getRoleLabel } from "../utils/getRoleLabel";
 
 type User = {
   id: number;
@@ -387,9 +388,16 @@ export default function DashboardUser(): JSX.Element {
   });
 
   // Render de vistas
+  const rol = localStorage.getItem("rol");
+  const userName = localStorage.getItem("user_name") || user?.user_name || "Usuario";
+  const roleLabel = getRoleLabel(rol);
+
   const renderDashboard = () => (
     <div>
-      <h2>Dashboard</h2>
+      <h2>Panel {roleLabel}</h2>
+      <p style={{ color: "#666", marginTop: 8, fontSize: "16px" }}>
+        👤 {userName}
+      </p>
       
       {/* Alertas */}
       {policiesExpiring.length > 0 && (

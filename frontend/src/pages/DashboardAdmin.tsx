@@ -4,6 +4,7 @@
   import { useNavigate } from "react-router-dom";
   import "../App.css";
   import { logout } from "../utils/logout";
+  import { getRoleLabel } from "../utils/getRoleLabel";
 
 
   type User = {
@@ -120,7 +121,8 @@ useEffect(() => {
   const rol = localStorage.getItem("rol");
   console.log("🟦 Rol en DashboardAdmin:", rol);
 
-  if (!token || rol !== "admin") {
+  // Permitir acceso a admin y sub_admin
+  if (!token || (rol !== "admin" && rol !== "sub_admin")) {
     logout(navigate);
     return;
   }
@@ -226,10 +228,17 @@ useEffect(() => {
       }
     };
 
+    const rol = localStorage.getItem("rol");
+    const userName = localStorage.getItem("user_name") || "Usuario";
+    const roleLabel = getRoleLabel(rol);
+
     return (
       <div className="admin-container" style={{ padding: 24 }}>
         <div className="admin-header">
-          <h2>Panel Administrador</h2>
+          <h2>Panel {roleLabel}</h2>
+          <p style={{ color: "#666", marginTop: 8, fontSize: "16px" }}>
+            👤 {userName}
+          </p>
         </div>
 
         {/* Barra de navegación fija */}
