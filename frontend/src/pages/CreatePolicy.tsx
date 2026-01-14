@@ -269,6 +269,10 @@ export default function CreatePolicy(props: CreatePolicyProps): JSX.Element {
     useState<"productos" | "autos">("productos");
   const [userData, setUserData] = useState<any>(null);
   const [companyData, setCompanyData] = useState<any>(null);
+  const [creatorData, setCreatorData] = useState<any>(null);
+  const [companiesList, setCompaniesList] = useState<any[]>([]);
+  const [usersList, setUsersList] = useState<any[]>([]);
+  const [policyData, setPolicyData] = useState<any>(null);
   const [isPolicyExpired, setIsPolicyExpired] = useState(false);
 
   // -------------------------------------------------------
@@ -298,6 +302,9 @@ export default function CreatePolicy(props: CreatePolicyProps): JSX.Element {
         const res = await API.get(endpoint);
         const data = res.data;
 
+        // Guardar los datos completos de la póliza
+        setPolicyData(data);
+
         const isAuto = !!data.placa || !!data.cod_fasecolda;
         setProductType(isAuto ? "autos" : "productos");
 
@@ -314,22 +321,26 @@ export default function CreatePolicy(props: CreatePolicyProps): JSX.Element {
         // Guardar datos del usuario para el PDF
         setUserData(data.user || {});
 
-        // Cargar datos de la empresa
-        if (data.company?.id) {
+        // Guardar información del creador
+        if (data.creator) {
+          setCreatorData({
+            ...data.creator,
+            role: data.created_by_role,
+          });
+        }
+
+        // Cargar datos de la empresa - intentar múltiples formas
+        const companyId = data.company?.id || data.company_id;
+        if (companyId) {
           try {
-            const companyRes = await API.get(`/companies/${data.company.id}`);
+            const companyRes = await API.get(`/companies/${companyId}`);
             setCompanyData(companyRes.data);
           } catch (error) {
             console.error('Error cargando datos de empresa', error);
-            // Si falla, usar datos básicos de la relación
-            setCompanyData(data.company || {});
-          }
-        } else if (data.company_id) {
-          try {
-            const companyRes = await API.get(`/companies/${data.company_id}`);
-            setCompanyData(companyRes.data);
-          } catch (error) {
-            console.error('Error cargando datos de empresa', error);
+            // Si falla, usar datos básicos de la relación si existen
+            if (data.company) {
+              setCompanyData(data.company);
+            }
           }
         }
 
@@ -338,6 +349,24 @@ export default function CreatePolicy(props: CreatePolicyProps): JSX.Element {
           const finVigencia = new Date(data.fin_vigencia);
           const hoy = new Date();
           setIsPolicyExpired(finVigencia < hoy);
+        }
+
+        // Cargar lista de compañías y usuarios si es admin o super_user (para poder cambiar estos campos)
+        const currentRol = localStorage.getItem("rol");
+        if (isEdit && (currentRol === "admin" || currentRol === "super_user")) {
+          try {
+            const companiesRes = await API.get("/companies");
+            setCompaniesList(companiesRes.data || []);
+          } catch (error) {
+            console.error("Error cargando lista de compañías", error);
+          }
+          
+          try {
+            const usersRes = await API.get("/auth/users");
+            setUsersList(usersRes.data || []);
+          } catch (error) {
+            console.error("Error cargando lista de usuarios", error);
+          }
         }
       } catch (error) {
         console.error(error);
@@ -348,7 +377,7 @@ export default function CreatePolicy(props: CreatePolicyProps): JSX.Element {
     };
 
     fetchPolicy();
-  }, [policyId, mode, navigate]);
+  }, [policyId, mode, navigate, isEdit]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -436,11 +465,38 @@ const handleSubmit = async (e: React.FormEvent) => {
     }
   });
 
-  // ❌ campos que ROMPEN el DTO
+  // ❌ campos que ROMPEN el DTO - eliminar objetos y relaciones
   delete payload.user;
+  delete payload.company; // 🔥 Eliminar objeto company (solo necesitamos company_id)
+  delete payload.creator; // 🔥 Eliminar objeto creator (solo necesitamos created_by_id)
   delete payload.id_policy;
   delete payload.fin_vigencia; // 🔥 SIEMPRE
-  delete payload.notificada;
+
+  // Para admin y super_user, permitir modificar estos campos al editar
+  if (isEdit && (rol === "admin" || rol === "super_user")) {
+    // company_id - usar el del selector o el del form
+    if (companyData?.id) {
+      payload.company_id = Number(companyData.id);
+    } else if (payload.company_id) {
+      payload.company_id = Number(payload.company_id);
+    }
+    
+    // created_by_id y created_by_role se mantienen si están en el form
+    if (payload.created_by_id) {
+      payload.created_by_id = Number(payload.created_by_id);
+    }
+    
+    // notificada se mantiene como boolean
+    if (payload.notificada !== undefined) {
+      payload.notificada = payload.notificada === true || payload.notificada === "true";
+    }
+  } else {
+    // Para sub_admin, eliminar estos campos del payload (no pueden modificarlos)
+    delete payload.notificada;
+    delete payload.created_by_id;
+    delete payload.created_by_role;
+    delete payload.company_id;
+  }
 
   if (productType === "productos") {
     delete payload.cod_fasecolda;
@@ -570,6 +626,164 @@ const handleSubmit = async (e: React.FormEvent) => {
       )}
 
       <form onSubmit={handleSubmit} style={{ display: "grid", gap: 8, maxWidth: 800 }}>
+
+        {/* Campos informativos - solo se muestran al editar */}
+        {isEdit && (
+          <>
+            <h3 style={{ marginTop: 0, marginBottom: 0, gridColumn: "1 / -1" }}>Información de la Póliza</h3>
+            
+            <label>Compañía</label>
+            {(rol === "admin" || rol === "super_user") && !effectiveIsView && companiesList.length > 0 ? (
+              <select
+                name="company_id"
+                value={companyData?.id || form.company_id || ""}
+                onChange={(e) => {
+                  const selectedCompany = companiesList.find(c => c.id === Number(e.target.value));
+                  if (selectedCompany) {
+                    setCompanyData(selectedCompany);
+                  }
+                }}
+              >
+                <option value="">Seleccione una compañía</option>
+                {companiesList.map((company: any) => (
+                  <option key={company.id} value={company.id}>
+                    {company.nombre}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                name="company_name"
+                disabled
+                value={companyData?.nombre || "Sin compañía asignada"}
+                placeholder="Nombre de la compañía"
+                style={{ 
+                  backgroundColor: effectiveIsView ? "#f5f5f5" : "#fff",
+                  cursor: "not-allowed"
+                }}
+              />
+            )}
+
+            <label>ID Compañía (company_id)</label>
+            {(rol === "admin" || rol === "super_user") && !effectiveIsView ? (
+              <input
+                type="number"
+                name="company_id"
+                value={form.company_id || policyData?.company_id || ""}
+                onChange={handleChange}
+                placeholder="ID de la compañía"
+              />
+            ) : (
+              <input
+                name="company_id_display"
+                disabled
+                value={form.company_id || policyData?.company_id || "N/A"}
+                style={{ 
+                  backgroundColor: "#f5f5f5",
+                  cursor: "not-allowed"
+                }}
+              />
+            )}
+
+            <label>Creado por (created_by_id)</label>
+            {(rol === "admin" || rol === "super_user") && !effectiveIsView && usersList.length > 0 ? (
+              <select
+                name="created_by_id"
+                value={form.created_by_id || ""}
+                onChange={(e) => {
+                  const selectedUserId = Number(e.target.value);
+                  setForm((s: any) => ({ ...s, created_by_id: selectedUserId }));
+                  const selectedUser = usersList.find((u: any) => u.id === selectedUserId);
+                  if (selectedUser) {
+                    setCreatorData({
+                      id: selectedUser.id,
+                      user_name: selectedUser.user_name,
+                      email: selectedUser.email,
+                    });
+                  }
+                }}
+              >
+                <option value="">Seleccione un usuario</option>
+                {usersList.map((user: any) => (
+                  <option key={user.id} value={user.id}>
+                    {user.user_name} (ID: {user.id})
+                  </option>
+                ))}
+              </select>
+            ) : creatorData ? (
+              <input
+                name="creator_name"
+                disabled
+                value={`${creatorData.user_name} (ID: ${creatorData.id})`}
+                placeholder="Usuario que creó la póliza"
+                style={{ 
+                  backgroundColor: "#f5f5f5",
+                  cursor: "not-allowed"
+                }}
+              />
+            ) : (
+              <input
+                name="creator_name"
+                disabled
+                value={`ID: ${form.created_by_id || policyData?.created_by_id || "N/A"}`}
+                style={{ 
+                  backgroundColor: "#f5f5f5",
+                  cursor: "not-allowed"
+                }}
+              />
+            )}
+
+            <label>Rol del Creador (created_by_role)</label>
+            {(rol === "admin" || rol === "super_user") && !effectiveIsView ? (
+              <select
+                name="created_by_role"
+                value={form.created_by_role || policyData?.created_by_role || ""}
+                onChange={handleChange}
+              >
+                <option value="">Seleccione un rol</option>
+                <option value="admin">admin</option>
+                <option value="sub_admin">sub_admin</option>
+                <option value="super_user">super_user</option>
+              </select>
+            ) : (
+              <input
+                name="created_by_role_display"
+                disabled
+                value={form.created_by_role || policyData?.created_by_role || "N/A"}
+                style={{ 
+                  backgroundColor: "#f5f5f5",
+                  cursor: "not-allowed"
+                }}
+              />
+            )}
+
+            <label>Notificada (notificada)</label>
+            {(rol === "admin" || rol === "super_user") && !effectiveIsView ? (
+              <select
+                name="notificada"
+                value={form.notificada ? "true" : "false"}
+                onChange={(e) => {
+                  setForm((s: any) => ({ ...s, notificada: e.target.value === "true" }));
+                }}
+              >
+                <option value="false">No</option>
+                <option value="true">Sí</option>
+              </select>
+            ) : (
+              <input
+                name="notificada_display"
+                disabled
+                value={form.notificada ? "Sí" : "No"}
+                style={{ 
+                  backgroundColor: "#f5f5f5",
+                  cursor: "not-allowed"
+                }}
+              />
+            )}
+
+            <hr style={{ gridColumn: "1 / -1", margin: "10px 0" }} />
+          </>
+        )}
 
         <label>Tomador (user_id)</label>
         <input

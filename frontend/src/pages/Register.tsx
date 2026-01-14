@@ -12,7 +12,8 @@ export default function Register(): JSX.Element {
   const role = localStorage.getItem("rol") || ""; // "admin" | "user" | "super_user" | "sub_admin"
   const isAdmin = role === "admin" || role === "super_user" || role === "sub_admin";
   const isSuperUser = role === "super_user"; // Solo super_user puede crear usuarios con roles privilegiados (admin, super_user)
-  const canCreateSubAdmin = role === "admin" || role === "super_user" || role === "sub_admin"; // Admin, super_user y sub_admin pueden crear sub_admin
+  const canCreateSubAdmin = role === "admin" || role === "super_user"; // Solo admin y super_user pueden crear sub_admin (NO sub_admin)
+  const isSubAdmin = role === "sub_admin"; // sub_admin solo puede crear usuarios con rol user
 
   const [form, setForm] = useState<any>({
     user_name: "",
@@ -84,9 +85,15 @@ const handleSubmit = async (e) => {
         dataToSend.roles = ['user'];
       }
       
-      // Solo admin y super_user pueden crear sub_admin
+      // Solo admin y super_user pueden crear sub_admin (NO sub_admin)
       if (!canCreateSubAdmin && requestedRole === 'sub_admin') {
-        alert("⚠️ No tienes permisos para crear usuarios con rol sub_admin. Se asignará el rol 'user'.");
+        alert("⚠️ No tienes permisos para crear usuarios con rol sub_admin. Solo admin y super_user pueden crear sub_admin. Se asignará el rol 'user'.");
+        dataToSend.roles = ['user'];
+      }
+      
+      // sub_admin solo puede crear usuarios con rol user
+      if (isSubAdmin && requestedRole !== 'user') {
+        alert("⚠️ Como sub_admin, solo puedes crear usuarios con rol 'user'. Se asignará el rol 'user'.");
         dataToSend.roles = ['user'];
       }
     }
@@ -181,9 +188,14 @@ const handleSubmit = async (e) => {
             ⚠️ El registro público solo permite crear usuarios con rol "user".
           </small>
         )}
-        {canCreateSubAdmin && !isSuperUser && !isEditing && (
+        {isSubAdmin && !isEditing && (
           <small style={{ color: "#666", fontSize: "12px" }}>
-            ℹ️ Puedes crear usuarios con rol "user" o "sub_admin". Solo un super_user puede crear "admin" o "super_user".
+            ℹ️ Como sub_admin, solo puedes crear usuarios con rol "user".
+          </small>
+        )}
+        {canCreateSubAdmin && !isSuperUser && !isSubAdmin && !isEditing && (
+          <small style={{ color: "#666", fontSize: "12px" }}>
+            ℹ️ Como admin, puedes crear usuarios con rol "user" o "sub_admin". Solo un super_user puede crear "admin" o "super_user".
           </small>
         )}
 

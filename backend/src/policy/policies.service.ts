@@ -328,10 +328,13 @@ Empresa: ${policy.company?.nombre || 'Sin empresa asignada'}
   }
 
   async findOne(id_policy: number, requesterId?: number) {
-    const policy = await this.policyRepository.findOne({
-      where: { id_policy },
-      relations: ['user'],
-    });
+    // Usar query builder para asegurar que company_id esté disponible
+    const policy = await this.policyRepository
+      .createQueryBuilder('policy')
+      .leftJoinAndSelect('policy.user', 'user')
+      .leftJoinAndSelect('policy.company', 'company')
+      .where('policy.id_policy = :id_policy', { id_policy })
+      .getOne();
 
     if (!policy)
       throw new NotFoundException(`Policy with id ${id_policy} not found`);
@@ -342,7 +345,31 @@ Empresa: ${policy.company?.nombre || 'Sin empresa asignada'}
       throw new ForbiddenException('No tienes permisos para ver esta póliza. Solo puedes ver las pólizas que creaste.');
     }
 
-    return policy;
+    // Obtener información del creador si existe
+    let creatorInfo: { id: number; user_name: string; email: string } | null = null;
+    if (policy.created_by_id) {
+      const creator = await this.userRepository.findOne({
+        where: { id: policy.created_by_id },
+        select: ['id', 'user_name', 'email'],
+      });
+      if (creator) {
+        creatorInfo = {
+          id: creator.id,
+          user_name: creator.user_name,
+          email: creator.email,
+        };
+      }
+    }
+
+    // Obtener company_id explícitamente
+    const companyId = policy.company?.id || null;
+    
+    // Retornar la póliza con información adicional
+    return {
+      ...policy,
+      company_id: companyId, // Asegurar que company_id esté presente
+      creator: creatorInfo,
+    };
   }
 
   async findByUser(userId: number, userCompanyId?: number) {
@@ -364,7 +391,10 @@ Empresa: ${policy.company?.nombre || 'Sin empresa asignada'}
   async update(id_policy: number, dto: UpdatePolicyDto, requesterId?: number) {
     console.log('DTO RECIBIDO EN UPDATE:', dto);
     try {
-      const { user_id, fin_vigencia, ...rest } = dto as any;
+      const { user_id, fin_vigencia, created_by_id, created_by_role, company_id, notificada, ...rest } = dto as any;
+
+      // Si se proporciona requesterId, es un sub_admin y no puede modificar estos campos
+      // Si NO se proporciona requesterId, es admin o super_user y puede modificar todo
 
       if (fin_vigencia) {
         rest.fin_vigencia = new Date(fin_vigencia);
@@ -390,6 +420,33 @@ Empresa: ${policy.company?.nombre || 'Sin empresa asignada'}
         if (!user)
           throw new NotFoundException(`User with id ${user_id} not found`);
         policy.user = user;
+      }
+
+      // Actualizar company_id si se proporciona (solo admin y super_user pueden hacer esto)
+      if (company_id !== undefined && requesterId === undefined) {
+        const company = await this.companyRepository.findOneBy({ id: +company_id });
+        if (!company)
+          throw new NotFoundException(`Company with id ${company_id} not found`);
+        policy.company = company;
+      }
+
+      // Actualizar created_by_id y created_by_role si se proporcionan (solo admin y super_user)
+      if (requesterId === undefined) {
+        if (created_by_id !== undefined) {
+          const creator = await this.userRepository.findOneBy({ id: +created_by_id });
+          if (!creator)
+            throw new NotFoundException(`Creator user with id ${created_by_id} not found`);
+          policy.created_by_id = +created_by_id;
+        }
+        
+        if (created_by_role !== undefined) {
+          policy.created_by_role = created_by_role;
+        }
+        
+        // Actualizar notificada si se proporciona
+        if (notificada !== undefined) {
+          policy.notificada = notificada === true || notificada === "true";
+        }
       }
 
       const saved = await this.policyRepository.save(policy);

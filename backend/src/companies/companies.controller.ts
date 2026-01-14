@@ -69,7 +69,7 @@ export class CompaniesController {
   }
 
   @Get(':id')
-  @Auth(ValidRoles.user, ValidRoles.admin, ValidRoles.super_user)
+  @Auth(ValidRoles.user, ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.companiesService.findOne(id);
   }

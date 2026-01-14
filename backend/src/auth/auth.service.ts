@@ -61,14 +61,19 @@ export class AuthService {
           );
         }
       } else if (requestedRoles.includes(ValidRoles.sub_admin)) {
-        // Solo super_user, admin o sub_admin pueden crear sub_admin
-        const isCreatorSubAdmin = creatorRoles?.includes(ValidRoles.sub_admin);
-        if (!isCreatorSuperUser && !isCreatorAdmin && !isCreatorSubAdmin) {
+        // Solo admin o super_user pueden crear sub_admin (NO sub_admin puede crear sub_admin)
+        if (!isCreatorSuperUser && !isCreatorAdmin) {
           this.logger.warn(`⚠️ Intento de crear usuario sub_admin sin autorización. Creador: ${creatorRoles?.join(', ') || 'público'}`);
           throw new BadRequestException(
             'No tienes permisos para crear usuarios con rol sub_admin. ' +
-            'Solo un admin, sub_admin o super_user puede crear este rol.'
+            'Solo un admin o super_user puede crear este rol.'
           );
+        }
+      } else if (isCreatorSubAdmin) {
+        // sub_admin solo puede crear usuarios con rol 'user'
+        if (requestedRoles.some(role => role !== ValidRoles.user)) {
+          this.logger.warn(`⚠️ sub_admin intentó crear usuario con rol no permitido. Forzando rol 'user'.`);
+          userData.roles = [ValidRoles.user];
         }
       } else if (!isCreatorSuperUser && !isCreatorAdmin && !isCreatorSubAdmin) {
         // Si el registro es público (sin creador con permisos), forzar rol 'user'
