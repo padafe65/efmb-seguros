@@ -2,11 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import '../App.css';
 
-// Configuración por defecto - Puedes cambiar estos valores o usar variables de entorno
-const DEFAULT_WHATSAPP_NUMBER = import.meta.env.VITE_WHATSAPP_NUMBER || '573026603858';
-const DEFAULT_FACEBOOK_PAGE_URL = import.meta.env.VITE_FACEBOOK_PAGE_URL || 'https://web.facebook.com/';
-const DEFAULT_FACEBOOK_PAGE_ID = import.meta.env.VITE_FACEBOOK_PAGE_ID || '';
-const DEFAULT_FACEBOOK_APP_ID = import.meta.env.VITE_FACEBOOK_APP_ID || '';
+// Configuración - Puedes cambiar estos valores o usar variables de entorno
+const WHATSAPP_NUMBER = import.meta.env.VITE_WHATSAPP_NUMBER || '573026603858';
+const FACEBOOK_PAGE_URL = import.meta.env.VITE_FACEBOOK_PAGE_URL || 'https://web.facebook.com/';
+const FACEBOOK_PAGE_ID = import.meta.env.VITE_FACEBOOK_PAGE_ID || '';
+const FACEBOOK_APP_ID = import.meta.env.VITE_FACEBOOK_APP_ID || '';
 
 interface ChatWidgetProps {
   whatsappNumber?: string;
@@ -16,45 +16,12 @@ interface ChatWidgetProps {
 }
 
 export default function ChatWidget({
-  whatsappNumber: propWhatsappNumber,
-  facebookPageUrl: propFacebookPageUrl,
-  facebookPageId: propFacebookPageId,
-  facebookAppId: propFacebookAppId,
+  whatsappNumber = WHATSAPP_NUMBER,
+  facebookPageUrl = FACEBOOK_PAGE_URL,
+  facebookPageId = FACEBOOK_PAGE_ID,
+  facebookAppId = FACEBOOK_APP_ID,
 }: ChatWidgetProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedCompany, setSelectedCompany] = useState<any>(null);
-
-  // Cargar compañía seleccionada desde localStorage
-  useEffect(() => {
-    const loadCompany = () => {
-      const savedCompany = localStorage.getItem("selectedCompany");
-      if (savedCompany) {
-        try {
-          setSelectedCompany(JSON.parse(savedCompany));
-        } catch (error) {
-          console.error("Error parseando compañía guardada", error);
-        }
-      }
-    };
-
-    loadCompany();
-
-    // Escuchar cambios en la compañía seleccionada
-    const handleCompanyChange = (event: CustomEvent) => {
-      setSelectedCompany(event.detail);
-    };
-
-    window.addEventListener("companyChanged" as any, handleCompanyChange as EventListener);
-    return () => {
-      window.removeEventListener("companyChanged" as any, handleCompanyChange as EventListener);
-    };
-  }, []);
-
-  // Usar compañía seleccionada o props o valores por defecto
-  const whatsappNumber = selectedCompany?.whatsapp_number || propWhatsappNumber || DEFAULT_WHATSAPP_NUMBER;
-  const facebookPageUrl = selectedCompany?.facebook_url || propFacebookPageUrl || DEFAULT_FACEBOOK_PAGE_URL;
-  const facebookPageId = propFacebookPageId || DEFAULT_FACEBOOK_PAGE_ID;
-  const facebookAppId = propFacebookAppId || DEFAULT_FACEBOOK_APP_ID;
 
   const openWhatsApp = (mensajeInicial = 'Hola, necesito información sobre seguros.') => {
     const mensajeCodificado = encodeURIComponent(mensajeInicial);
@@ -136,8 +103,8 @@ export default function ChatWidget({
           className="fb-customerchat"
           page_id={facebookPageId}
           theme_color="#0084ff"
-          logged_in_greeting="¡Hola! ¿En qué podemos ayudarte con EFMB Seguros?"
-          logged_out_greeting="¡Hola! ¿En qué podemos ayudarte con EFMB Seguros?"
+          logged_in_greeting="¡Hola! ¿En qué podemos ayudarte con Seguros MAB?"
+          logged_out_greeting="¡Hola! ¿En qué podemos ayudarte con Seguros MAB?"
         ></div>
       )}
     </>

@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 import FlipFormCard from "../components/FlipFormCard";
 import API from "../api/axiosConfig";
 import { logout } from "../utils/logout";
-import { getRoleLabel } from "../utils/getRoleLabel";
 
 type User = {
   id: number;
@@ -66,10 +65,6 @@ export default function DashboardUser(): JSX.Element {
     mensaje: "",
   });
 
-  // Mensajes de contacto del usuario
-  const [myMessages, setMyMessages] = useState<any[]>([]);
-  const [loadingMessages, setLoadingMessages] = useState(false);
-
   // obtiene id desde token
   const getUserIdFromToken = useCallback((): number | null => {
     const token = localStorage.getItem("token");
@@ -92,16 +87,6 @@ export default function DashboardUser(): JSX.Element {
         },
       });
       setUser(data);
-      
-      // Inicializar el formulario de contacto con los datos del usuario si está logueado
-      if (data) {
-        setContactForm(prev => ({
-          ...prev,
-          nombre: prev.nombre || data.user_name || "",
-          email: prev.email || data.email || "",
-        }));
-      }
-      
       return data;
     } catch (error) {
       console.error("Error obteniendo usuario:", error);
@@ -184,8 +169,6 @@ export default function DashboardUser(): JSX.Element {
       if (id) {
         await loadPolicies(id);
       }
-    } else if (view === "contacto") {
-      loadMyMessages();
     }
   };
 
@@ -222,72 +205,27 @@ export default function DashboardUser(): JSX.Element {
       // Obtener user_id si el usuario está logueado
       const userId = getUserIdFromToken();
       
-      // Usar valores del formulario, o si están vacíos y el usuario está logueado, usar los valores del usuario
       const payload: any = {
-        nombre: contactForm.nombre || user?.user_name || "",
-        email: contactForm.email || user?.email || "",
-        asunto: contactForm.asunto || "",
-        mensaje: contactForm.mensaje || "",
+        nombre: contactForm.nombre,
+        email: contactForm.email,
+        asunto: contactForm.asunto,
+        mensaje: contactForm.mensaje,
       };
       
-      // Validar que los campos requeridos no estén vacíos
-      if (!payload.nombre || payload.nombre.trim().length < 2) {
-        alert("❌ El nombre debe tener al menos 2 caracteres");
-        setLoading(false);
-        return;
-      }
-      
-      if (!payload.email || !payload.email.includes("@")) {
-        alert("❌ Por favor ingresa un email válido");
-        setLoading(false);
-        return;
-      }
-      
-      if (!payload.asunto || payload.asunto.trim().length < 3) {
-        alert("❌ El asunto debe tener al menos 3 caracteres");
-        setLoading(false);
-        return;
-      }
-      
-      if (!payload.mensaje || payload.mensaje.trim().length < 10) {
-        alert("❌ El mensaje debe tener al menos 10 caracteres");
-        setLoading(false);
-        return;
-      }
-      
-      // Agregar user_id solo si el usuario está logueado (como número)
+      // Agregar user_id solo si el usuario está logueado
       if (userId) {
-        payload.user_id = Number(userId);
+        payload.user_id = userId;
       }
       
       await API.post("/contact/send-message", payload);
       
       alert("✅ Mensaje enviado correctamente. Nos pondremos en contacto contigo pronto.");
       setContactForm({ nombre: "", email: "", asunto: "", mensaje: "" });
-      // Recargar mensajes después de enviar
-      loadMyMessages();
     } catch (error: any) {
-      console.error("Error enviando mensaje:", error);
       const errorMessage = error.response?.data?.message || error.message || "Error al enviar el mensaje";
       alert(`❌ ${errorMessage}`);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadMyMessages = async () => {
-    try {
-      setLoadingMessages(true);
-      const res = await API.get("/contact/my-messages");
-      setMyMessages(res.data || []);
-    } catch (error: any) {
-      console.error("Error cargando mensajes:", error);
-      // Si el usuario no está autenticado, simplemente no mostrar mensajes
-      if (error.response?.status !== 401) {
-        console.error("Error al cargar mensajes");
-      }
-    } finally {
-      setLoadingMessages(false);
     }
   };
 
@@ -388,21 +326,9 @@ export default function DashboardUser(): JSX.Element {
   });
 
   // Render de vistas
-  const rol = localStorage.getItem("rol");
-  const userName = localStorage.getItem("user_name") || user?.user_name || "Usuario";
-  const roleLabel = getRoleLabel(rol);
-
   const renderDashboard = () => (
     <div>
-      <h2>Panel {roleLabel}</h2>
-      <p style={{ color: "#666", marginTop: 8, fontSize: "16px" }}>
-        👤 {userName}
-      </p>
-      {companyData?.nombre && (
-        <p style={{ color: "#666", marginTop: 4, fontSize: "14px" }}>
-          🏢 {companyData.nombre}
-        </p>
-      )}
+      <h2>Dashboard</h2>
       
       {/* Alertas */}
       {policiesExpiring.length > 0 && (
@@ -890,100 +816,7 @@ export default function DashboardUser(): JSX.Element {
           </form>
         </div>
 
-        {/* Sección de Mis Mensajes Enviados */}
-        <div style={{ marginTop: "30px", gridColumn: "1 / -1" }}>
-          <h3>Mis Mensajes Enviados</h3>
-          {loadingMessages ? (
-            <p>Cargando mensajes...</p>
-          ) : myMessages.length === 0 ? (
-            <p style={{ color: "#666", fontStyle: "italic" }}>
-              No has enviado ningún mensaje aún.
-            </p>
-          ) : (
-            <div style={{ display: "grid", gap: "15px", marginTop: "15px" }}>
-              {myMessages.map((msg: any) => (
-                <div
-                  key={msg.id}
-                  style={{
-                    border: "1px solid #ddd",
-                    borderRadius: "8px",
-                    padding: "15px",
-                    background: msg.respondido ? "#e8f5e9" : msg.leido ? "#fff3e0" : "#fff",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: "10px" }}>
-                    <div>
-                      <strong style={{ fontSize: "16px" }}>{msg.asunto}</strong>
-                      <p style={{ margin: "5px 0", color: "#666", fontSize: "14px" }}>
-                        {new Date(msg.created_at).toLocaleString('es-ES')}
-                      </p>
-                    </div>
-                    <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
-                      {msg.leido ? (
-                        <span style={{ 
-                          background: "#4caf50", 
-                          color: "white", 
-                          padding: "4px 8px", 
-                          borderRadius: "4px", 
-                          fontSize: "12px" 
-                        }}>
-                          ✓ Leído
-                        </span>
-                      ) : (
-                        <span style={{ 
-                          background: "#ff9800", 
-                          color: "white", 
-                          padding: "4px 8px", 
-                          borderRadius: "4px", 
-                          fontSize: "12px" 
-                        }}>
-                          ⏳ Pendiente
-                        </span>
-                      )}
-                      {msg.respondido && (
-                        <span style={{ 
-                          background: "#2196f3", 
-                          color: "white", 
-                          padding: "4px 8px", 
-                          borderRadius: "4px", 
-                          fontSize: "12px" 
-                        }}>
-                          💬 Respondido
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div style={{ marginTop: "10px" }}>
-                    <p style={{ margin: "5px 0", color: "#333", whiteSpace: "pre-wrap" }}>{msg.mensaje}</p>
-                  </div>
-
-                  {msg.respondido && msg.respuesta && (
-                    <div style={{ 
-                      marginTop: "15px", 
-                      padding: "15px", 
-                      background: "#e3f2fd", 
-                      borderRadius: "6px",
-                      borderLeft: "4px solid #2196f3"
-                    }}>
-                      <strong style={{ color: "#1976d2" }}>Respuesta del Administrador:</strong>
-                      <p style={{ margin: "8px 0", color: "#333", whiteSpace: "pre-wrap" }}>
-                        {msg.respuesta}
-                      </p>
-                      {msg.responded_at && (
-                        <p style={{ margin: "5px 0", fontSize: "12px", color: "#666" }}>
-                          Respondido el: {new Date(msg.responded_at).toLocaleString('es-ES')}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div style={{ gridColumn: "1 / -1" }}>
+        <div>
           <h3>Preguntas Frecuentes (FAQ)</h3>
           <div style={{ marginTop: "15px" }}>
             <div style={{ marginBottom: "15px" }}>

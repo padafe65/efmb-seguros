@@ -4,7 +4,6 @@ import { PoliciesController } from './policies.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PolicyEntity } from './entities/policy.entity';
 import { UsersEntity } from 'src/auth/entities/users.entity';
-import { CompanyEntity } from 'src/companies/entities/company.entity';
 import { NotificationsService } from 'src/notifications/notifications.service';
 import { NotificationsModule } from 'src/notifications/notifications.module';
 import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
@@ -13,7 +12,7 @@ import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
   controllers: [PoliciesController],
   providers: [PoliciesService],
   imports: [
-    TypeOrmModule.forFeature([PolicyEntity, UsersEntity, CompanyEntity]),
+    TypeOrmModule.forFeature([PolicyEntity, UsersEntity]),
     NotificationsModule,
     WhatsappModule,
   ],

@@ -1,4 +1,11 @@
-import { Column, Entity, ManyToOne, OneToMany, PrimaryGeneratedColumn, JoinColumn } from 'typeorm';
+import {
+  Column,
+  Entity,
+  ManyToOne,
+  OneToMany,
+  PrimaryGeneratedColumn,
+  JoinColumn,
+} from 'typeorm';
 import { ValidRoles } from '../interfaces/valid-roles';
 import { PolicyEntity } from 'src/policy/entities/policy.entity';
 import { CompanyEntity } from 'src/companies/entities/company.entity';
@@ -42,16 +49,11 @@ export class UsersEntity {
   @Column('text', { nullable: true })
   representante_legal: string;
 
-  @Column('text', { nullable: true, name: 'facebook_url' })
-  facebook_url: string;
-
   @Column('date', { nullable: true })
   fecha_nacimiento: Date;
 
-  @Column('enum', {
-    enum: ValidRoles,
-    array: true,
-    default: [ValidRoles.user],
+  @Column('simple-array', {
+    default: () => "'user'",
   })
   roles: ValidRoles[];
 
@@ -62,15 +64,23 @@ export class UsersEntity {
   @Column('timestamp', { nullable: true, name: 'reset_password_expires' })
   reset_password_expires: Date | null;
 
+  // ID plano de la empresa (para asignaciones directas)
+  @Column('int', { nullable: true, name: 'company_id' })
+  company_id?: number | null;
+
   // Relación con empresa/aseguradora
   @ManyToOne(() => CompanyEntity, { nullable: true, eager: false })
   @JoinColumn({ name: 'company_id' })
-  company?: CompanyEntity;
-
-  // Campo para almacenar quién creó al usuario (admin o sub_admin)
-  @Column('integer', { nullable: true, name: 'created_by_id' })
-  created_by_id: number;
+  company?: CompanyEntity | null;
 
   @OneToMany(() => PolicyEntity, (policy) => policy.user)
   policies: PolicyEntity[];
+
+  // Auditoría: Quién creó este registro
+  @Column('int', { nullable: true, name: 'created_by' })
+  created_by?: number | null;
+
+  @ManyToOne(() => UsersEntity, { nullable: true })
+  @JoinColumn({ name: 'created_by' })
+  creator?: UsersEntity | null;
 }

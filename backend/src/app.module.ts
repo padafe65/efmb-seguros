@@ -13,15 +13,15 @@ import { CompaniesModule } from './companies/companies.module';
 @Module({
   imports: [
     ConfigModule.forRoot(),
-    ScheduleModule.forRoot(), // 👈 ACTIVA CRON
+    ScheduleModule.forRoot(),
 
     TypeOrmModule.forRoot({
-      type: 'postgres',
-      host: process.env.DB_HOST,
-      port: +process.env.DB_PORT!,
-      database: process.env.DB_NAME,
-      username: process.env.DB_USERNAME,
-      password: process.env.DB_PASSWORD,
+      type: 'mysql', // 👈 ESTE ERA EL PROBLEMA: debe decir 'mysql'
+      host: process.env.DB_HOST || 'localhost',
+      port: +process.env.DB_PORT! || 3306,
+      database: process.env.DB_NAME || 'segurosmab',
+      username: process.env.DB_USERNAME || 'root',
+      password: process.env.DB_PASSWORD || '',
       autoLoadEntities: true,
       synchronize: true,
     }),

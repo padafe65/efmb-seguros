@@ -5,7 +5,6 @@ import {
   Delete,
   Get,
   Param,
-  ParseIntPipe,
   Post,
   Query,
   Req,
@@ -18,29 +17,47 @@ import { CreateUserDTO } from './dto/create-user.dto';
 import { LoginUserDTO } from './dto/login-user.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { GetUser } from './decorators/get-user/get-user.decorator';
-import { GetUserOptional } from './decorators/get-user-optional/get-user-optional.decorator';
 import { ValidRoles } from './interfaces/valid-roles';
 import { UserRolesGuard } from './guards/user-roles/user-roles.guard';
 import { RoleProtected } from './decorators/role-protected/role-protected.decorator';
 import { UpdateUserDTO } from './dto/update-user.dto';
 import { Auth } from './decorators/auth.decorator';
 import { PaginationDto } from 'src/common/dto/pagination.dto';
-import { OptionalJwtAuthGuard } from './guards/optional-jwt/optional-jwt.guard';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  @UseGuards(OptionalJwtAuthGuard)
-  registerUser(@Body() createUserDto: CreateUserDTO, @GetUserOptional() user?: any) {
-    // Si el usuario está logueado (admin o super_user), asignar su company_id
-    const companyId = user?.company?.id || user?.company_id || undefined;
-    // Pasar los roles del creador para validación de seguridad
-    const creatorRoles = user?.roles || undefined;
-    // Pasar el ID del creador para guardar quién creó el usuario
-    const creatorId = user?.id || undefined;
-    return this.authService.createUser(createUserDto, companyId, creatorRoles, creatorId);
+  async registerUser(@Body() createUserDto: CreateUserDTO, @Req() req: any) {
+    console.log('----------------------------------------------------');
+    console.log('>>> [CONTROLLER] 1. Petición POST a /auth/register recibida');
+    console.log(
+      '>>> [CONTROLLER] DTO recibido:',
+      JSON.stringify(createUserDto, null, 2),
+    );
+
+    // Extraer el token de forma segura sin romper la petición si no existe
+    const authHeader = req.headers['authorization'];
+    console.log(
+      '>>> [CONTROLLER] Authorization Header:',
+      authHeader ? 'Presente' : 'Ausente',
+    );
+
+    try {
+      const result = await this.authService.createUserWithOptionalCreator(
+        createUserDto,
+        authHeader,
+      );
+      console.log(
+        '>>> [CONTROLLER] 2. Resultado devuelto por authService:',
+        result,
+      );
+      return result;
+    } catch (err: any) {
+      console.error('>>> [CONTROLLER ERROR ATRAPADO]:', err);
+      throw err;
+    }
   }
 
   @Post('login')
@@ -55,27 +72,28 @@ export class AuthController {
   }
 
   @Get('users')
-  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
+  @Auth(ValidRoles.admin, ValidRoles.super_user)
   getAllUsers(@Query() query: any, @GetUser() user: any) {
     const { user_name, email, documento, limit, skip, company_id } = query;
 
     // Super_user puede filtrar por company_id, admin solo ve su empresa
-    const requesterCompanyId = user.roles?.includes('super_user') 
-      ? (company_id ? Number(company_id) : undefined)
-      : (user.company?.id || user.company_id);
-    
-    // Pasar información del usuario para filtrado (sub_admin solo ve usuarios que creó)
-    const requesterId = user?.id;
-    const requesterRoles = user?.roles || [];
+    const requesterCompanyId = user.roles?.includes('super_user')
+      ? company_id
+        ? Number(company_id)
+        : undefined
+      : user.company?.id || user.company_id;
 
-    return this.authService.findAllUsers({
-      user_name,
-      email,
-      documento,
-      limit: limit ? Number(limit) : undefined,
-      skip: skip ? Number(skip) : undefined,
-      company_id: company_id ? Number(company_id) : undefined,
-    }, requesterCompanyId, requesterId, requesterRoles);
+    return this.authService.findAllUsers(
+      {
+        user_name,
+        email,
+        documento,
+        limit: limit ? Number(limit) : undefined,
+        skip: skip ? Number(skip) : undefined,
+        company_id: company_id ? Number(company_id) : undefined,
+      },
+      requesterCompanyId,
+    );
   }
 
   // Nuevo: obtener usuario por id (sin password)
@@ -85,17 +103,17 @@ export class AuthController {
   }
 
   @Get('search')
-  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
+  @Auth(ValidRoles.admin, ValidRoles.super_user)
   search(@Query('q') q: string, @GetUser() user: any) {
-    const requesterCompanyId = user.roles?.includes('super_user') 
-      ? undefined 
-      : (user.company?.id || user.company_id);
+    const requesterCompanyId = user.roles?.includes('super_user')
+      ? undefined
+      : user.company?.id || user.company_id;
     return this.authService.searchUsers(q, requesterCompanyId);
   }
 
   // Admin: actualizar cualquier usuario (NO puede cambiar password)
   @Patch('update/:id')
-  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
+  @Auth(ValidRoles.admin, ValidRoles.super_user)
   async updateUserAdmin(
     @Param('id') id: number,
     @Body() updateUserDto: UpdateUserDTO,
@@ -112,17 +130,6 @@ export class AuthController {
   @Auth(ValidRoles.user)
   async updateUser(@GetUser() user, @Body() updateUserDto: UpdateUserDTO) {
     return this.authService.updateUser(user.id, updateUserDto);
-  }
-
-  // Activar/Desactivar usuario
-  @Patch('users/:id/toggle-status')
-  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
-  async toggleUserStatus(
-    @Param('id', ParseIntPipe) id: number,
-    @GetUser() requester: any,
-  ) {
-    const requesterRoles = requester.roles || [];
-    return this.authService.toggleUserStatus(id, requesterRoles);
   }
 
   @Delete(':id')
@@ -158,6 +165,9 @@ export class AuthController {
   async resetPasswordWithToken(
     @Body() body: { token: string; newPassword: string },
   ) {
-    return this.authService.resetPasswordWithToken(body.token, body.newPassword);
+    return this.authService.resetPasswordWithToken(
+      body.token,
+      body.newPassword,
+    );
   }
 }

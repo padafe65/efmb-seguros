@@ -48,10 +48,6 @@ export class CreateUserDTO {
   representante_legal?: string;
 
   @IsOptional()
-  @IsString()
-  facebook_url?: string;
-
-  @IsOptional()
   @Type(() => Date)
   @IsDate()
   fecha_nacimiento?: Date;
@@ -63,4 +59,9 @@ export class CreateUserDTO {
   @IsOptional()
   @IsArray()
   roles?: ValidRoles[] = [ValidRoles.user];
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  company_id?: number | null;
 }

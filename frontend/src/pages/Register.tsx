@@ -2,18 +2,14 @@
 import React, { useState, useEffect } from "react";
 import API from "../api/axiosConfig";
 import { useParams, useNavigate } from "react-router-dom";
-import { navigateToDashboard } from "../utils/navigateToDashboard";
 
 export default function Register(): JSX.Element {
   const { id } = useParams();
   const navigate = useNavigate();
 
   const isEditing = Boolean(id);
-  const role = localStorage.getItem("rol") || ""; // "admin" | "user" | "super_user" | "sub_admin"
-  const isAdmin = role === "admin" || role === "super_user" || role === "sub_admin";
-  const isSuperUser = role === "super_user"; // Solo super_user puede crear usuarios con roles privilegiados (admin, super_user)
-  const canCreateSubAdmin = role === "admin" || role === "super_user"; // Solo admin y super_user pueden crear sub_admin (NO sub_admin)
-  const isSubAdmin = role === "sub_admin"; // sub_admin solo puede crear usuarios con rol user
+  const role = localStorage.getItem("rol") || ""; // "admin" | "user" | "super_user"
+  const isAdmin = role === "admin" || role === "super_user";
 
   const [form, setForm] = useState<any>({
     user_name: "",
@@ -24,12 +20,22 @@ export default function Register(): JSX.Element {
     telefono: "",
     actividad_empresa: "",
     representante_legal: "",
-    facebook_url: "",
     fecha_nacimiento: "",
     roles: ["user"],
     isactive: true,
     user_password: "",
+    company_id: "",
   });
+  const [companies, setCompanies] = useState<any[]>([]);
+
+  useEffect(() => {
+    // Cargar listado de empresas si es admin o super_user
+    if (isAdmin) {
+      API.get("/companies")
+        .then((res) => setCompanies(res.data || []))
+        .catch((err) => console.error("Error cargando empresas:", err));
+    }
+  }, [isAdmin]);
 
   useEffect(() => {
     if (isEditing && id) {
@@ -42,6 +48,14 @@ export default function Register(): JSX.Element {
     try {
       const res = await API.get(`/auth/users/${userId}`);
       const user = res.data;
+      let fechaFormatted = "";
+      if (user.fecha_nacimiento) {
+        try {
+          fechaFormatted = new Date(user.fecha_nacimiento).toISOString().substring(0, 10);
+        } catch {
+          fechaFormatted = String(user.fecha_nacimiento).substring(0, 10);
+        }
+      }
       // Mapear a form (no traemos password)
       setForm({
         user_name: user.user_name || "",
@@ -52,10 +66,10 @@ export default function Register(): JSX.Element {
         telefono: user.telefono || "",
         actividad_empresa: user.actividad_empresa || "",
         representante_legal: user.representante_legal || "",
-        facebook_url: user.facebook_url || "",
-        fecha_nacimiento: user.fecha_nacimiento ? new Date(user.fecha_nacimiento).toISOString().substring(0,10) : "",
+        fecha_nacimiento: fechaFormatted,
         roles: user.roles || ["user"],
         isactive: user.isactive ?? true,
+        company_id: user.company?.id?.toString() || user.company_id?.toString() || "",
         user_password: "", // vacío por seguridad
       });
     } catch (err) {
@@ -75,32 +89,16 @@ const handleSubmit = async (e) => {
   try {
     const dataToSend = { ...form };
 
-    // 🔒 Validación de seguridad en frontend
-    if (!isEditing) {
-      const requestedRole = Array.isArray(dataToSend.roles) ? dataToSend.roles[0] : dataToSend.roles;
-      
-      // Solo super_user puede crear admin o super_user
-      if (!isSuperUser && (requestedRole === 'admin' || requestedRole === 'super_user')) {
-        alert("⚠️ No tienes permisos para crear usuarios con roles privilegiados (admin o super_user). Se asignará el rol 'user'.");
-        dataToSend.roles = ['user'];
-      }
-      
-      // Solo admin y super_user pueden crear sub_admin (NO sub_admin)
-      if (!canCreateSubAdmin && requestedRole === 'sub_admin') {
-        alert("⚠️ No tienes permisos para crear usuarios con rol sub_admin. Solo admin y super_user pueden crear sub_admin. Se asignará el rol 'user'.");
-        dataToSend.roles = ['user'];
-      }
-      
-      // sub_admin solo puede crear usuarios con rol user
-      if (isSubAdmin && requestedRole !== 'user') {
-        alert("⚠️ Como sub_admin, solo puedes crear usuarios con rol 'user'. Se asignará el rol 'user'.");
-        dataToSend.roles = ['user'];
-      }
-    }
-
     // ❗Evitar enviar contraseña vacía
     if (isEditing && !dataToSend.user_password) {
       delete dataToSend.user_password;
+    }
+
+    // Normalizar company_id para que sea número o null (evitar string vacío)
+    if (dataToSend.company_id === "" || dataToSend.company_id === undefined) {
+      dataToSend.company_id = null;
+    } else {
+      dataToSend.company_id = Number(dataToSend.company_id);
     }
 
     if (isEditing) {
@@ -111,13 +109,15 @@ const handleSubmit = async (e) => {
       alert("Usuario creado correctamente");
     }
 
-    // Navegar al dashboard correspondiente según el rol
-    navigateToDashboard(navigate);
+    if (role === "super_user") {
+      navigate("/dashboard-super");
+    } else {
+      navigate("/dashboard-admin");
+    }
 
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error guardando", error);
-    const errorMessage = error.response?.data?.message || "Hubo un error al guardar";
-    alert(`❌ ${errorMessage}`);
+    alert("Hubo un error al guardar");
   }
 };
 
@@ -150,18 +150,6 @@ const handleSubmit = async (e) => {
         <label>Representante legal</label>
         <input name="representante_legal" value={form.representante_legal} onChange={handleChange} placeholder="Representante legal" />
 
-        <label>URL de Facebook (opcional)</label>
-        <input 
-          name="facebook_url" 
-          value={form.facebook_url} 
-          onChange={handleChange} 
-          placeholder="https://www.facebook.com/tu-pagina" 
-          type="url"
-        />
-        <small style={{ color: "#666", fontSize: "12px" }}>
-          Ingresa el enlace completo de tu página de Facebook (opcional)
-        </small>
-
         <label>Fecha de nacimiento</label>
         <input name="fecha_nacimiento" value={form.fecha_nacimiento} onChange={handleChange} type="date" />
 
@@ -170,33 +158,28 @@ const handleSubmit = async (e) => {
           name="roles"
           value={Array.isArray(form.roles) ? form.roles[0] : form.roles}
           onChange={(e) => setForm((s:any) => ({ ...s, roles: [e.target.value] }))}
-          disabled={!isAdmin && !isEditing} // Solo admin, sub_admin y super_user pueden asignar roles al crear
         >
           <option value="user">user</option>
-          {canCreateSubAdmin && (
-            <option value="sub_admin">sub_admin</option>
-          )}
-          {isSuperUser && (
-            <>
-              <option value="admin">admin</option>
-              <option value="super_user">super_user</option>
-            </>
-          )}
+          <option value="admin">admin</option>
+          <option value="super_user">super_user</option>
         </select>
-        {!isAdmin && !isEditing && (
-          <small style={{ color: "#666", fontSize: "12px" }}>
-            ⚠️ El registro público solo permite crear usuarios con rol "user".
-          </small>
-        )}
-        {isSubAdmin && !isEditing && (
-          <small style={{ color: "#666", fontSize: "12px" }}>
-            ℹ️ Como sub_admin, solo puedes crear usuarios con rol "user".
-          </small>
-        )}
-        {canCreateSubAdmin && !isSuperUser && !isSubAdmin && !isEditing && (
-          <small style={{ color: "#666", fontSize: "12px" }}>
-            ℹ️ Como admin, puedes crear usuarios con rol "user" o "sub_admin". Solo un super_user puede crear "admin" o "super_user".
-          </small>
+
+        {isAdmin && (
+          <>
+            <label>Empresa / Aseguradora</label>
+            <select
+              name="company_id"
+              value={form.company_id || ""}
+              onChange={handleChange}
+            >
+              <option value="">-- Sin empresa asociada --</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre} {c.nit ? `(${c.nit})` : ""}
+                </option>
+              ))}
+            </select>
+          </>
         )}
 
         {/* Contraseña solo para crear o si el mismo usuario se está editando */}
@@ -216,7 +199,15 @@ const handleSubmit = async (e) => {
 
         <div style={{ display: "flex", gap: 8 }}>
           <button type="submit">{isEditing ? "Actualizar Usuario" : "Crear Usuario"}</button>
-          <button type="button" onClick={() => navigateToDashboard(navigate)}>Cancelar</button>
+          <button
+            type="button"
+            onClick={() => {
+              if (role === "super_user") navigate("/dashboard-super");
+              else navigate("/dashboard-admin");
+            }}
+          >
+            Cancelar
+          </button>
         </div>
       </form>
     </div>

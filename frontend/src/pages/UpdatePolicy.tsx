@@ -2,7 +2,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import API from "../api/axiosConfig";
-import { navigateToDashboard } from "../utils/navigateToDashboard";
 
 export default function UpdatePolicy(): JSX.Element {
   const { id } = useParams<{ id: string }>();
@@ -27,8 +26,7 @@ export default function UpdatePolicy(): JSX.Element {
       } catch (err) {
         console.error(err);
         alert("No se encontró la póliza");
-        // Volver al dashboard según el rol
-        navigateToDashboard(navigate);
+        navigate("/dashboard-admin");
       }
     })();
   }, [id, navigate]);
@@ -60,9 +58,7 @@ export default function UpdatePolicy(): JSX.Element {
       await API.patch(`/policies/${id}`, payload);
 
       alert("Póliza actualizada");
-      
-      // Navegar al dashboard correspondiente según el rol
-      navigateToDashboard(navigate);
+      navigate("/dashboard-admin");
     } catch (err: any) {
       console.error(err);
       alert("Error al actualizar");

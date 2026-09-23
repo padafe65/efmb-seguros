@@ -98,4 +98,9 @@ export class CreatePolicyDto {
   @IsOptional()
   @IsString()
   beneficiario?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  company_id?: number | null;
 }

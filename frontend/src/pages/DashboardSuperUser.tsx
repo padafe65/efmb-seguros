@@ -4,7 +4,6 @@ import API from "../api/axiosConfig";
 import { useNavigate } from "react-router-dom";
 import "../App.css";
 import { logout } from "../utils/logout";
-import { getRoleLabel } from "../utils/getRoleLabel";
 
 type User = {
   id: number;
@@ -25,7 +24,7 @@ type User = {
 
 type Policy = any;
 
-export default function DashboardSuperUser(): JSX.Element {
+export default function DashboardSuperUser(): React.JSX.Element {
   const [users, setUsers] = useState<User[]>([]);
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [filterUserId, setFilterUserId] = useState<string>("");
@@ -42,13 +41,8 @@ export default function DashboardSuperUser(): JSX.Element {
   const [newRoles, setNewRoles] = useState<string[]>([]);
   const [editingCompany, setEditingCompany] = useState<number | null>(null);
   const [newCompanyId, setNewCompanyId] = useState<string>("");
-  const [activeTab, setActiveTab] = useState<"users" | "policies" | "stats" | "companies" | "messages">("users");
-  const [contactMessages, setContactMessages] = useState<any[]>([]);
-  const [selectedMessage, setSelectedMessage] = useState<any | null>(null);
-  const [responseText, setResponseText] = useState<string>("");
-  const [showResponseModal, setShowResponseModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<"users" | "policies" | "stats" | "companies">("users");
   const [companies, setCompanies] = useState<any[]>([]);
-  const [filterMessageCompany, setFilterMessageCompany] = useState<string>("");
   const [filterCompanyId, setFilterCompanyId] = useState<string>("");
   const [editingCompanyData, setEditingCompanyData] = useState<any>(null);
   const [companyForm, setCompanyForm] = useState<any>({
@@ -57,8 +51,6 @@ export default function DashboardSuperUser(): JSX.Element {
     direccion: "",
     telefono: "",
     email: "",
-    whatsapp_number: "",
-    facebook_url: "",
     logo_url: "",
     color_primario: "#631025",
     color_secundario: "#4c55d3",
@@ -66,7 +58,18 @@ export default function DashboardSuperUser(): JSX.Element {
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [useLogoUrl, setUseLogoUrl] = useState<boolean>(true); // true = URL, false = upload
-  const [currentUserCompany, setCurrentUserCompany] = useState<any>(null);
+
+  const formatDate = (dateStr: any) => {
+    if (!dateStr) return "-";
+    // Extraer solo la parte YYYY-MM-DD
+    const str = String(dateStr).substring(0, 10);
+    const parts = str.split("-");
+    if (parts.length === 3) {
+      const [yyyy, mm, dd] = parts;
+      return `${mm}/${dd}/${yyyy}`; // Muestra mes/día/año exacto sin desfase
+    }
+    return str;
+  };
 
   const navigate = useNavigate();
 
@@ -141,56 +144,20 @@ export default function DashboardSuperUser(): JSX.Element {
 
   useEffect(() => {
     const token = localStorage.getItem("token");
-    const rol = localStorage.getItem("rol");
+    const rol = localStorage.getItem("rol") || localStorage.getItem("roles");
     console.log("🟦 Token en DashboardSuperUser:", token);
     console.log("🟦 Rol en DashboardSuperUser:", rol);
 
-    if (!token || rol !== "super_user") {
+    if (!token || (rol !== "super_user" && !rol?.includes("super_user"))) {
       logout(navigate);
       return;
     }
 
-    // Cargar datos del usuario actual (aunque super_user no tiene compañía, cargamos por si acaso)
-    const loadCurrentUser = async () => {
-      try {
-        const res = await API.get("/auth/getUserExpress", {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (res.data?.company_id || res.data?.company?.id) {
-          const companyId = res.data.company_id || res.data.company?.id;
-          const companyRes = await API.get(`/companies/${companyId}`);
-          setCurrentUserCompany(companyRes.data);
-        }
-      } catch (err) {
-        console.error("Error cargando datos de compañía del usuario", err);
-      }
-    };
-
-    loadCurrentUser();
     loadCompanies();
     loadUsers();
     loadPolicies();
     // eslint-disable-next-line
   }, []);
-
-  const handleToggleUserStatus = async (user: User) => {
-    const action = user.isactive ? "desactivar" : "activar";
-    const userType = user.roles?.includes("admin") || user.roles?.includes("super_user") 
-      ? "usuario privilegiado" 
-      : "usuario";
-    
-    if (!confirm(`¿Estás seguro de ${action} este ${userType}?`)) return;
-    
-    try {
-      await API.patch(`/auth/users/${user.id}/toggle-status`);
-      alert(`Usuario ${action === "activar" ? "activado" : "desactivado"} correctamente`);
-      loadUsers();
-    } catch (err: any) {
-      console.error(err);
-      const errorMessage = err.response?.data?.message || "Error al cambiar el estado del usuario";
-      alert(`❌ ${errorMessage}`);
-    }
-  };
 
   const handleDeleteUser = async (id: number) => {
     if (!confirm("¿Eliminar usuario?")) return;
@@ -251,51 +218,6 @@ export default function DashboardSuperUser(): JSX.Element {
     }
   };
 
-  const loadContactMessages = async () => {
-    try {
-      setLoading(true);
-      const res = await API.get("/contact/messages");
-      setContactMessages(res.data || []);
-    } catch (err) {
-      console.error(err);
-      alert("No se pudieron cargar mensajes de contacto");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleMarkAsRead = async (messageId: number) => {
-    try {
-      await API.patch(`/contact/messages/${messageId}/read`);
-      alert("✅ Mensaje marcado como leído");
-      loadContactMessages();
-    } catch (err) {
-      console.error(err);
-      alert("❌ Error al marcar como leído");
-    }
-  };
-
-  const handleRespond = async () => {
-    if (!selectedMessage || !responseText.trim()) {
-      alert("❌ Por favor escribe una respuesta");
-      return;
-    }
-
-    try {
-      await API.patch(`/contact/messages/${selectedMessage.id}/respond`, {
-        respuesta: responseText,
-      });
-      alert("✅ Respuesta enviada correctamente");
-      setShowResponseModal(false);
-      setResponseText("");
-      setSelectedMessage(null);
-      loadContactMessages();
-    } catch (err) {
-      console.error(err);
-      alert("❌ Error al enviar respuesta");
-    }
-  };
-
   const handleSearch = () => {
     loadPolicies({
       user_id: filterUserId || undefined,
@@ -343,6 +265,28 @@ export default function DashboardSuperUser(): JSX.Element {
     setNewCompanyId(user.company?.id?.toString() || user.company_id?.toString() || "");
   };
 
+  const handleToggleActive = async (user: User) => {
+    const nuevoEstado = !user.isactive;
+    try {
+      // 1. Actualización optimista en la interfaz para respuesta inmediata
+      setUsers((prev) =>
+        prev.map((u) => (u.id === user.id ? { ...u, isactive: nuevoEstado } : u))
+      );
+
+      // 2. Persistir en el backend
+      await API.patch(`/auth/update/${user.id}`, {
+        isactive: nuevoEstado,
+      });
+    } catch (err) {
+      console.error("Error cambiando estado del usuario:", err);
+      alert("No se pudo cambiar el estado del usuario");
+      // Revertir en caso de fallo
+      setUsers((prev) =>
+        prev.map((u) => (u.id === user.id ? { ...u, isactive: user.isactive } : u))
+      );
+    }
+  };
+
   const handleSaveUserCompany = async (userId: number) => {
     try {
       await API.patch(`/auth/update/${userId}`, { 
@@ -365,8 +309,6 @@ export default function DashboardSuperUser(): JSX.Element {
       direccion: company.direccion || "",
       telefono: company.telefono || "",
       email: company.email || "",
-      whatsapp_number: company.whatsapp_number || "",
-      facebook_url: company.facebook_url || "",
       logo_url: company.logo_url || "",
       color_primario: company.color_primario || "#631025",
       color_secundario: company.color_secundario || "#4c55d3",
@@ -389,8 +331,6 @@ export default function DashboardSuperUser(): JSX.Element {
       if (companyForm.direccion) formData.append('direccion', companyForm.direccion);
       if (companyForm.telefono) formData.append('telefono', companyForm.telefono);
       if (companyForm.email) formData.append('email', companyForm.email);
-      if (companyForm.whatsapp_number) formData.append('whatsapp_number', companyForm.whatsapp_number);
-      if (companyForm.facebook_url) formData.append('facebook_url', companyForm.facebook_url);
       if (companyForm.color_primario) formData.append('color_primario', companyForm.color_primario);
       if (companyForm.color_secundario) formData.append('color_secundario', companyForm.color_secundario);
 
@@ -424,8 +364,6 @@ export default function DashboardSuperUser(): JSX.Element {
         direccion: "",
         telefono: "",
         email: "",
-        whatsapp_number: "",
-        facebook_url: "",
         logo_url: "",
         color_primario: "#631025",
         color_secundario: "#4c55d3",
@@ -437,21 +375,6 @@ export default function DashboardSuperUser(): JSX.Element {
     } catch (err) {
       console.error(err);
       alert("Error al guardar empresa");
-    }
-  };
-
-  const handleToggleCompanyStatus = async (company: any) => {
-    const action = company.isactive ? "desactivar" : "activar";
-    if (!confirm(`¿Estás seguro de ${action} esta empresa?`)) return;
-    
-    try {
-      await API.patch(`/companies/${company.id}/toggle-status`);
-      alert(`Empresa ${action === "activar" ? "activada" : "desactivada"} correctamente`);
-      loadCompanies();
-    } catch (err: any) {
-      console.error(err);
-      const errorMessage = err.response?.data?.message || "Error al cambiar el estado de la empresa";
-      alert(`❌ ${errorMessage}`);
     }
   };
 
@@ -489,40 +412,16 @@ export default function DashboardSuperUser(): JSX.Element {
 
   const stats = getStats();
 
-  const rol = localStorage.getItem("rol");
-  const userName = localStorage.getItem("user_name") || "Usuario";
-  const roleLabel = getRoleLabel(rol);
-
   return (
     <div className="admin-container" style={{ padding: 24 }}>
       <div className="admin-header">
-        <h2>Panel {roleLabel}</h2>
-        <p style={{ color: "#666", marginTop: 8, fontSize: "16px" }}>
-          👤 {userName}
-        </p>
-        {currentUserCompany?.nombre && (
-          <p style={{ color: "#666", marginTop: 4, fontSize: "14px" }}>
-            🏢 {currentUserCompany.nombre}
-          </p>
-        )}
-        <p style={{ color: "#666", marginTop: 4, fontSize: "14px" }}>
+        <h2>Panel Super Usuario</h2>
+        <p style={{ color: "#666", marginTop: 8 }}>
           Acceso completo al sistema - Gestión de usuarios, pólizas y roles
         </p>
       </div>
 
-      <div className="admin-actions" style={{ 
-        display: "flex", 
-        gap: 12, 
-        marginBottom: 12,
-        position: "sticky",
-        top: 0,
-        background: "#fff",
-        padding: "15px 0",
-        zIndex: 100,
-        borderBottom: "2px solid #ddd",
-        boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-        flexWrap: "wrap"
-      }}>
+      <div className="admin-actions" style={{ display: "flex", gap: 12, marginBottom: 12 }}>
         <button className="admin-btn" onClick={() => setActiveTab("users")}>
           👥 Usuarios
         </button>
@@ -535,17 +434,8 @@ export default function DashboardSuperUser(): JSX.Element {
         <button className="admin-btn" onClick={() => setActiveTab("companies")}>
           🏢 Empresas
         </button>
-        <button className="admin-btn" onClick={() => { setActiveTab("messages"); loadContactMessages(); }}>
-          💬 Mensajes
-        </button>
         <button className="admin-btn" onClick={loadUsers}>
           🔄 Refrescar
-        </button>
-        <button 
-          className="admin-btn secondary" 
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-        >
-          ⬆️ Arriba
         </button>
         <button className="admin-btn" onClick={() => navigate("/admin/users/create")}>
           ➕ Crear Usuario
@@ -783,18 +673,31 @@ export default function DashboardSuperUser(): JSX.Element {
                         )}
                       </td>
                       <td>
-                        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                          <input
-                            type="checkbox"
-                            checked={u.isactive || false}
-                            onChange={() => handleToggleUserStatus(u)}
-                            style={{ width: "20px", height: "20px", cursor: "pointer" }}
-                          />
-                          <span style={{ fontSize: "14px", color: u.isactive ? "#28a745" : "#dc3545" }}>
-                            {u.isactive ? "Activo" : "Inactivo"}
-                          </span>
-                        </label>
-                      </td>
+                      <label
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          cursor: "pointer",
+                          userSelect: "none",
+                          fontWeight: 500,
+                          color: u.isactive ? "#2e7d32" : "#c62828",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={!!u.isactive}
+                          onChange={() => handleToggleActive(u)}
+                          style={{
+                            cursor: "pointer",
+                            width: "18px",
+                            height: "18px",
+                            accentColor: "#2e7d32",
+                          }}
+                        />
+                        {u.isactive ? "Activo" : "Inactivo"}
+                      </label>
+                    </td>
                       <td className="row-actions" style={{ display: "flex", gap: 8 }}>
                         <button className="edit" onClick={() => navigate(`/admin/users/edit/${u.id}`)}>
                           Editar
@@ -870,8 +773,8 @@ export default function DashboardSuperUser(): JSX.Element {
           {loading ? (
             <p className="admin-empty">Cargando pólizas...</p>
           ) : (
-            <div style={{ overflowX: "auto", maxWidth: "100%" }}>
-              <table className="admin-table" style={{ width: "100%", marginTop: 12, minWidth: "1200px" }}>
+            <div style={{ overflowX: "auto" }}>
+              <table className="admin-table" style={{ width: "100%", marginTop: 12 }}>
                 <thead>
                   <tr>
                     <th>ID</th>
@@ -894,8 +797,8 @@ export default function DashboardSuperUser(): JSX.Element {
                       <td>{p.policy_number}</td>
                       <td>{p.tipo_poliza}</td>
                       <td>{p.placa || "-"}</td>
-                      <td>{p.inicio_vigencia ? new Date(p.inicio_vigencia).toLocaleDateString() : "-"}</td>
-                      <td>{p.fin_vigencia ? new Date(p.fin_vigencia).toLocaleDateString() : "-"}</td>
+                      <td>{formatDate(p.inicio_vigencia)}</td>
+                      <td>{formatDate(p.fin_vigencia)}</td>
                       <td>{p.valor_asegurado ?? "-"}</td>
                       <td>{p.user?.user_name ?? "-"}</td>
                       <td>{p.company?.nombre || "Sin empresa"}</td>
@@ -940,8 +843,6 @@ export default function DashboardSuperUser(): JSX.Element {
                   direccion: "",
                   telefono: "",
                   email: "",
-                  whatsapp_number: "",
-                  facebook_url: "",
                   logo_url: "",
                   color_primario: "#631025",
                   color_secundario: "#4c55d3",
@@ -996,19 +897,6 @@ export default function DashboardSuperUser(): JSX.Element {
                   type="email"
                   value={companyForm.email}
                   onChange={(e) => setCompanyForm({...companyForm, email: e.target.value})}
-                />
-                <input
-                  className="admin-input"
-                  placeholder="Número de WhatsApp (ej: 573026603858)"
-                  value={companyForm.whatsapp_number}
-                  onChange={(e) => setCompanyForm({...companyForm, whatsapp_number: e.target.value})}
-                />
-                <input
-                  className="admin-input"
-                  placeholder="URL de Facebook (ej: https://www.facebook.com/tu-pagina)"
-                  type="url"
-                  value={companyForm.facebook_url}
-                  onChange={(e) => setCompanyForm({...companyForm, facebook_url: e.target.value})}
                 />
                 <div style={{ gridColumn: "1 / -1" }}>
                   <label style={{ display: "block", marginBottom: "8px", fontWeight: "bold" }}>
@@ -1097,8 +985,6 @@ export default function DashboardSuperUser(): JSX.Element {
                       direccion: "",
                       telefono: "",
                       email: "",
-                      whatsapp_number: "",
-                      facebook_url: "",
                       logo_url: "",
                       color_primario: "#631025",
                       color_secundario: "#4c55d3",
@@ -1162,19 +1048,7 @@ export default function DashboardSuperUser(): JSX.Element {
                           />
                         </div>
                       </td>
-                      <td>
-                        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                          <input
-                            type="checkbox"
-                            checked={c.isactive || false}
-                            onChange={() => handleToggleCompanyStatus(c)}
-                            style={{ width: "20px", height: "20px", cursor: "pointer" }}
-                          />
-                          <span style={{ fontSize: "14px", color: c.isactive ? "#28a745" : "#dc3545" }}>
-                            {c.isactive ? "Activa" : "Inactiva"}
-                          </span>
-                        </label>
-                      </td>
+                      <td>{c.isactive ? "✅ Activa" : "❌ Inactiva"}</td>
                       <td className="row-actions" style={{ display: "flex", gap: 8 }}>
                         <button
                           className="edit"
@@ -1200,208 +1074,6 @@ export default function DashboardSuperUser(): JSX.Element {
                   )}
                 </tbody>
               </table>
-            </div>
-          )}
-        </section>
-      )}
-
-      {activeTab === "messages" && (
-        <section className="admin-section">
-          <h3>💬 Mensajes de Contacto</h3>
-          
-          {/* Filtros */}
-          <div className="admin-filters" style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-            <label style={{ fontWeight: "bold", minWidth: "120px" }}>Filtrar por Empresa:</label>
-            <select
-              className="admin-input"
-              value={filterMessageCompany}
-              onChange={(e) => setFilterMessageCompany(e.target.value)}
-              style={{ padding: "8px", minWidth: "200px" }}
-            >
-              <option value="">Todas las empresas</option>
-              {companies.map(company => (
-                <option key={company.id} value={company.id}>
-                  {company.nombre}
-                </option>
-              ))}
-            </select>
-            <button 
-              className="admin-btn secondary" 
-              onClick={() => setFilterMessageCompany("")}
-              style={{ padding: "8px 15px" }}
-            >
-              🗑️ Limpiar Filtro
-            </button>
-          </div>
-
-          <button className="admin-btn" onClick={loadContactMessages} style={{ marginBottom: "10px" }}>
-            🔄 Actualizar Mensajes
-          </button>
-
-          {loading ? (
-            <p className="admin-empty">Cargando mensajes...</p>
-          ) : (
-            <div style={{ overflowX: "auto", maxWidth: "100%" }}>
-              <table className="admin-table" style={{ width: "100%", marginTop: 12, minWidth: "1000px" }}>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>De</th>
-                  <th>Email</th>
-                  <th>Asunto</th>
-                  <th>Mensaje</th>
-                  <th>Usuario</th>
-                  <th>Empresa</th>
-                  <th>Fecha</th>
-                  <th>Estado</th>
-                  <th>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {contactMessages
-                  .filter((msg: any) => {
-                    // Filtrar por compañía si hay un filtro seleccionado
-                    if (filterMessageCompany) {
-                      const companyId = Number(filterMessageCompany);
-                      return msg.company?.id === companyId;
-                    }
-                    return true; // Mostrar todos si no hay filtro
-                  })
-                  .map((msg: any) => (
-                  <tr key={msg.id} style={{ background: msg.leido ? "#f0f0f0" : "#fff3cd" }}>
-                    <td>{msg.id}</td>
-                    <td>{msg.nombre}</td>
-                    <td>{msg.email}</td>
-                    <td>{msg.asunto}</td>
-                    <td style={{ maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {msg.mensaje.substring(0, 50)}...
-                    </td>
-                    <td>{msg.user?.user_name || "Visitante"}</td>
-                    <td>{msg.company?.nombre || "-"}</td>
-                    <td>{new Date(msg.created_at).toLocaleString('es-ES')}</td>
-                    <td>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                        {msg.leido ? (
-                          <span style={{ color: "#28a745", fontSize: "12px" }}>✓ Leído</span>
-                        ) : (
-                          <span style={{ color: "#ff9800", fontSize: "12px" }}>⏳ Pendiente</span>
-                        )}
-                        {msg.respondido && (
-                          <span style={{ color: "#2196f3", fontSize: "12px" }}>💬 Respondido</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="row-actions" style={{ display: "flex", gap: 8, flexDirection: "column" }}>
-                      <button
-                        className="view"
-                        onClick={() => {
-                          setSelectedMessage(msg);
-                          setShowResponseModal(true);
-                        }}
-                      >
-                        Ver/Responder
-                      </button>
-                      {!msg.leido && (
-                        <button
-                          className="edit"
-                          onClick={() => handleMarkAsRead(msg.id)}
-                        >
-                          Marcar Leído
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {contactMessages.filter((msg: any) => {
-                  if (filterMessageCompany) {
-                    const companyId = Number(filterMessageCompany);
-                    return msg.company?.id === companyId;
-                  }
-                  return true;
-                }).length === 0 && (
-                  <tr>
-                    <td colSpan={10} className="admin-empty">
-                      {filterMessageCompany 
-                        ? "No hay mensajes de contacto para la empresa seleccionada"
-                        : "No hay mensajes de contacto"}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-            </div>
-          )}
-
-          {/* Modal para ver y responder mensaje */}
-          {showResponseModal && selectedMessage && (
-            <div className="modal-overlay">
-              <div className="modal-content" style={{ maxWidth: "600px" }}>
-                <h3>Mensaje de {selectedMessage.nombre}</h3>
-                <button
-                  className="close-modal"
-                  onClick={() => {
-                    setShowResponseModal(false);
-                    setSelectedMessage(null);
-                    setResponseText("");
-                  }}
-                >
-                  Cerrar ✖
-                </button>
-
-                <div style={{ marginTop: "20px" }}>
-                  <p><strong>Email:</strong> {selectedMessage.email}</p>
-                  <p><strong>Asunto:</strong> {selectedMessage.asunto}</p>
-                  <p><strong>Fecha:</strong> {new Date(selectedMessage.created_at).toLocaleString('es-ES')}</p>
-                  <p><strong>Usuario:</strong> {selectedMessage.user?.user_name || "Visitante"}</p>
-                  {selectedMessage.company && (
-                    <p><strong>Empresa:</strong> {selectedMessage.company.nombre}</p>
-                  )}
-                  <div style={{ marginTop: "15px", padding: "15px", background: "#f5f5f5", borderRadius: "4px" }}>
-                    <strong>Mensaje:</strong>
-                    <p style={{ whiteSpace: "pre-wrap", marginTop: "5px" }}>{selectedMessage.mensaje}</p>
-                  </div>
-
-                  {selectedMessage.respondido && selectedMessage.respuesta && (
-                    <div style={{ marginTop: "15px", padding: "15px", background: "#e3f2fd", borderRadius: "4px" }}>
-                      <strong>Respuesta anterior:</strong>
-                      <p style={{ whiteSpace: "pre-wrap", marginTop: "5px" }}>{selectedMessage.respuesta}</p>
-                      <small style={{ color: "#666" }}>
-                        Respondido el: {new Date(selectedMessage.responded_at).toLocaleString('es-ES')}
-                      </small>
-                    </div>
-                  )}
-
-                  <div style={{ marginTop: "20px" }}>
-                    <label>
-                      <strong>Tu respuesta:</strong>
-                    </label>
-                    <textarea
-                      value={responseText}
-                      onChange={(e) => setResponseText(e.target.value)}
-                      placeholder="Escribe tu respuesta aquí..."
-                      rows={6}
-                      style={{ width: "100%", padding: "10px", marginTop: "5px", borderRadius: "4px", border: "1px solid #ddd" }}
-                    />
-                  </div>
-
-                  <div style={{ marginTop: "15px", display: "flex", gap: "10px" }}>
-                    <button className="admin-btn" onClick={handleRespond}>
-                      {selectedMessage.respondido ? "Actualizar Respuesta" : "Enviar Respuesta"}
-                    </button>
-                    {!selectedMessage.leido && (
-                      <button
-                        className="admin-btn secondary"
-                        onClick={() => {
-                          handleMarkAsRead(selectedMessage.id);
-                          setSelectedMessage({ ...selectedMessage, leido: true });
-                        }}
-                      >
-                        Marcar como Leído
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
             </div>
           )}
         </section>
@@ -1436,8 +1108,8 @@ export default function DashboardSuperUser(): JSX.Element {
                       <td>{p.id_policy}</td>
                       <td>{p.policy_number}</td>
                       <td>{p.tipo_poliza}</td>
-                      <td>{new Date(p.inicio_vigencia).toLocaleDateString()}</td>
-                      <td>{new Date(p.fin_vigencia).toLocaleDateString()}</td>
+                      <td>{formatDate(p.inicio_vigencia)}</td>
+                      <td>{formatDate(p.fin_vigencia)}</td>
                       <td>{p.company?.nombre || "Sin empresa"}</td>
                       <td>
                         <button

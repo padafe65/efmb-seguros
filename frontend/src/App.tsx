@@ -15,15 +15,12 @@ import ProtectedRoute from "./routes/ProtectedRoute";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import ChatWidget from "./components/ChatWidget";
-import { useInactivityTimeout } from "./utils/useInactivityTimeout";
 
-function AppContent() {
-  // Timeout de inactividad: 30 minutos (puedes cambiarlo)
-  useInactivityTimeout(30);
-
+export default function App() {
   return (
-    <div className="app-layout">
-      <Navbar />
+    <Router>
+      <div className="app-layout">
+        <Navbar />
 
         <main>
           <Routes>
@@ -36,7 +33,7 @@ function AppContent() {
             <Route
               path="/dashboard-admin"
               element={
-                <ProtectedRoute allowed={["admin", "sub_admin"]}>
+                <ProtectedRoute allowed={["admin"]}>
                   <DashboardAdmin />
                 </ProtectedRoute>
               }
@@ -54,7 +51,7 @@ function AppContent() {
             <Route
               path="/admin/users/create"
               element={
-                <ProtectedRoute allowed={["admin", "super_user", "sub_admin"]}>
+                <ProtectedRoute allowed={["admin", "super_user"]}>
                   <Register />
                 </ProtectedRoute>
               }
@@ -63,7 +60,7 @@ function AppContent() {
             <Route
               path="/admin/users/edit/:id"
               element={
-                <ProtectedRoute allowed={["admin", "super_user", "sub_admin"]}>
+                <ProtectedRoute allowed={["admin", "super_user"]}>
                   <Register />
                 </ProtectedRoute>
               }
@@ -72,7 +69,7 @@ function AppContent() {
             <Route
               path="/admin/policies/create"
               element={
-                <ProtectedRoute allowed={["admin", "super_user", "sub_admin"]}>
+                <ProtectedRoute allowed={["admin", "super_user"]}>
                   <CreatePolicy />
                 </ProtectedRoute>
               }
@@ -81,7 +78,7 @@ function AppContent() {
             <Route
              path="/admin/policies/edit/:id_policy"
               element={
-                <ProtectedRoute allowed={["admin", "super_user", "sub_admin"]}>
+                <ProtectedRoute allowed={["admin", "super_user"]}>
                   <CreatePolicy mode="edit" />
                 </ProtectedRoute>
               }
@@ -90,7 +87,7 @@ function AppContent() {
             <Route
               path="/admin/policies/view/:id"
               element={
-                <ProtectedRoute allowed={["admin", "super_user", "sub_admin"]}>
+                <ProtectedRoute allowed={["admin", "super_user"]}>
                   <CreatePolicy mode="view" />
                 </ProtectedRoute>
               }
@@ -106,34 +103,9 @@ function AppContent() {
                 </ProtectedRoute>
               }
             />
-            
-            {/* Rutas protegidas para users (ver y editar sus propias pólizas) */}
-            <Route
-              path="/policy/view/:id"
-              element={
-                <ProtectedRoute allowed={["user"]}>
-                  <CreatePolicy mode="view" />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/policy/edit/:id"
-              element={
-                <ProtectedRoute allowed={["user"]}>
-                  <CreatePolicy mode="edit" />
-                </ProtectedRoute>
-              }
-            />
-            
-            {/* Ruta protegida para admin, super_user y sub_admin (crear pólizas) */}
-            <Route
-              path="/policy/create"
-              element={
-                <ProtectedRoute allowed={["admin", "super_user", "sub_admin"]}>
-                  <CreatePolicy mode="create" />
-                </ProtectedRoute>
-              }
-            />
+            <Route path="/policy/create" element={<CreatePolicy mode="create" />} />
+            <Route path="/policy/view/:id" element={<CreatePolicy mode="view" />} />
+            <Route path="/policy/edit/:id" element={<CreatePolicy mode="edit" />} />
 
           </Routes>
         </main>
@@ -141,13 +113,6 @@ function AppContent() {
         <Footer />
         <ChatWidget />
       </div>
-  );
-}
-
-export default function App() {
-  return (
-    <Router>
-      <AppContent />
     </Router>
   );
 }

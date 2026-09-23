@@ -30,21 +30,23 @@ const handleLogin = async (e: React.FormEvent) => {
     const payload = JSON.parse(atob(token.split(".")[1]));
     console.log("🔥 PAYLOAD JWT:", payload);
 
-    const rol = Array.isArray(payload.roles) ? payload.roles[0] : payload.roles;
+    const rol = Array.isArray(payload.roles)
+      ? payload.roles[0]
+      : (typeof payload.roles === "string" ? payload.roles.split(",")[0] : payload.roles);
 
     console.log("🔥 ROL DETECTADO:", rol);
 
-    // GUARDAR ROL CON EL NOMBRE CORRECTO
+    // GUARDAR ROL E INFORMACIÓN CORRECTAMENTE
     localStorage.setItem("rol", rol);
-    // Guardar ID y Roles correctamente
-    localStorage.setItem("id_user", payload.id?.toString() || "");
+    localStorage.setItem("roles", rol);
+    localStorage.setItem("id_user", payload.id || payload.id_user);
 
     localStorage.setItem("user_name", data.Details.UserDetails.name);
     localStorage.setItem("email", data.Details.UserDetails.email);
 
     if (rol === "user") {
       navigate("/dashboard-user", { replace: true });
-    } else if (rol === "admin" || rol === "sub_admin") {
+    } else if (rol === "admin") {
       navigate("/dashboard-admin", { replace: true });
     } else if (rol === "super_user") {
       navigate("/dashboard-super", { replace: true });
