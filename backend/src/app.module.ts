@@ -9,6 +9,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { ContactModule } from './contact/contact.module';
 import { CompaniesModule } from './companies/companies.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { CompaniesModule } from './companies/companies.module';
     WhatsappModule,
     ContactModule,
     CompaniesModule,
+    AuditModule, // 👈 Se añade aquí
   ],
   controllers: [],
   providers: [],

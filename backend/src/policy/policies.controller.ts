@@ -10,6 +10,7 @@ import {
   Query,
   ParseIntPipe,
   ForbiddenException,
+  Ip,
 } from '@nestjs/common';
 import { PoliciesService } from './policies.service';
 import { CreatePolicyDto } from './dto/create-policy.dto';
@@ -28,9 +29,13 @@ export class PoliciesController {
 
   @Post('create')
   @Auth(ValidRoles.admin, ValidRoles.super_user)
-  create(@Body() dto: CreatePolicyDto, @GetUser() user: any) {
+  create(
+    @Body() dto: CreatePolicyDto,
+    @GetUser() user: any,
+    @Ip() ip: string, // 👈 Captura de IP
+  ) {
     const companyId = user.company?.id || user.company_id || undefined;
-    return this.policiesService.create(dto, companyId);
+    return this.policiesService.create(dto, companyId, user, ip);
   }
 
   @Get()
@@ -45,18 +50,23 @@ export class PoliciesController {
     @GetUser() user?: any,
   ) {
     // Super_user puede filtrar por company_id, admin solo ve su empresa
-    const requesterCompanyId = user?.roles?.includes('super_user') 
-      ? (company_id ? Number(company_id) : undefined)
-      : (user?.company?.id || user?.company_id);
+    const requesterCompanyId = user?.roles?.includes('super_user')
+      ? company_id
+        ? Number(company_id)
+        : undefined
+      : user?.company?.id || user?.company_id;
 
-    return this.policiesService.findAllWithFilters({
-      userId: user_id,
-      policyNumber: policy_number,
-      placa,
-      limit,
-      skip,
-      company_id: company_id ? Number(company_id) : undefined,
-    }, requesterCompanyId);
+    return this.policiesService.findAllWithFilters(
+      {
+        userId: user_id,
+        policyNumber: policy_number,
+        placa,
+        limit,
+        skip,
+        company_id: company_id ? Number(company_id) : undefined,
+      },
+      requesterCompanyId,
+    );
   }
 
   @Get(':id_policy')
@@ -70,14 +80,20 @@ export class PoliciesController {
   update(
     @Param('id_policy', ParseIntPipe) id_policy: number,
     @Body() dto: UpdatePolicyDto,
+    @GetUser() currentUser: any,
+    @Ip() ip: string, // 👈 Captura de IP
   ) {
-    return this.policiesService.update(id_policy, dto);
+    return this.policiesService.update(id_policy, dto, currentUser, ip);
   }
 
   @Delete(':id_policy')
   @Auth(ValidRoles.admin, ValidRoles.super_user)
-  remove(@Param('id_policy', ParseIntPipe) id_policy: number) {
-    return this.policiesService.remove(id_policy);
+  remove(
+    @Param('id_policy', ParseIntPipe) id_policy: number,
+    @GetUser() currentUser: any,
+    @Ip() ip: string, // 👈 Captura de IP
+  ) {
+    return this.policiesService.remove(id_policy, currentUser, ip);
   }
 
   // ===============================
@@ -110,12 +126,10 @@ export class PoliciesController {
     @GetUser() user: any,
   ) {
     const policy = await this.policiesService.findOne(id_policy);
-    
+
     // 🔐 si es USER, solo puede ver sus propias pólizas
     if (user.roles?.includes('user') && policy.user.id !== user.id) {
-      throw new ForbiddenException(
-        'No puede ver pólizas de otro usuario',
-      );
+      throw new ForbiddenException('No puede ver pólizas de otro usuario');
     }
 
     return policy;

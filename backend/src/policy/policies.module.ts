@@ -7,6 +7,7 @@ import { UsersEntity } from 'src/auth/entities/users.entity';
 import { NotificationsService } from 'src/notifications/notifications.service';
 import { NotificationsModule } from 'src/notifications/notifications.module';
 import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   controllers: [PoliciesController],
@@ -15,6 +16,7 @@ import { WhatsappModule } from 'src/whatsapp/whatsapp.module';
     TypeOrmModule.forFeature([PolicyEntity, UsersEntity]),
     NotificationsModule,
     WhatsappModule,
+    AuditModule, // 👈 Se importa AuditModule
   ],
   exports: [TypeOrmModule, PoliciesService],
 })

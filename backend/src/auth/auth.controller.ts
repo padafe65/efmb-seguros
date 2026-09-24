@@ -111,18 +111,19 @@ export class AuthController {
     return this.authService.searchUsers(q, requesterCompanyId);
   }
 
-  // Admin: actualizar cualquier usuario (NO puede cambiar password)
+  // Admin / Super User: actualizar cualquier usuario (asigna empresa, estado, datos)
   @Patch('update/:id')
   @Auth(ValidRoles.admin, ValidRoles.super_user)
   async updateUserAdmin(
     @Param('id') id: number,
     @Body() updateUserDto: UpdateUserDTO,
+    @GetUser() currentUser: any, // 👈 Captura al Superusuario o Admin autenticado
   ) {
     // ensure password is not changed by admin (Option A)
     if ('user_password' in (updateUserDto as any)) {
       delete (updateUserDto as any).user_password;
     }
-    return this.authService.updateUser(id, updateUserDto);
+    return this.authService.updateUser(+id, updateUserDto, currentUser);
   }
 
   // Usuario autenticado: actualiza su propio perfil (puede cambiar password)
@@ -144,10 +145,10 @@ export class AuthController {
   async updateUserRoles(
     @Param('id') id: number,
     @Body() body: { roles: string[] },
+    @GetUser() currentUser: any, // 👈 Captura al Superusuario autenticado
   ) {
-    return this.authService.updateUserRoles(+id, body.roles);
+    return this.authService.updateUserRoles(+id, body.roles, currentUser);
   }
-
   // Solicitar restablecimiento de contraseña (envía email con token)
   @Post('forgot-password')
   async requestPasswordReset(@Body() body: { email: string }) {

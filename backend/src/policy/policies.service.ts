@@ -6,17 +6,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { addMonths, startOfDay, endOfDay } from 'date-fns';
-import { Between } from 'typeorm';
+import { addMonths, startOfDay, endOfDay, addYears } from 'date-fns';
+import { Between, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { PolicyEntity } from './entities/policy.entity';
-import { Repository } from 'typeorm';
 import { CreatePolicyDto } from './dto/create-policy.dto';
 import { UpdatePolicyDto } from './dto/update-policy.dto';
 import { UsersEntity } from 'src/auth/entities/users.entity';
-import { addYears } from 'date-fns';
 import { NotificationsService } from 'src/notifications/notifications.service';
 import { WhatsappService } from 'src/whatsapp/whatsapp.service';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class PoliciesService {
@@ -28,8 +27,12 @@ export class PoliciesService {
 
     @InjectRepository(UsersEntity)
     private readonly userRepository: Repository<UsersEntity>,
+
     private readonly notificationsService: NotificationsService,
+
     private readonly whatsappService: WhatsappService,
+
+    private readonly auditService: AuditService, // Inyección de auditoría
   ) {}
 
   @Cron('0 8 * * *') // todos los días 8am
@@ -115,7 +118,12 @@ Comunícate con Seguros MAB para renovarla.
     await this.policyRepository.save(policy);
   }
 
-  async create(dto: CreatePolicyDto, creatorCompanyId?: number) {
+  async create(
+    dto: CreatePolicyDto,
+    creatorCompanyId?: number,
+    currentUser?: any,
+    clientIp?: string,
+  ) {
     try {
       const user = await this.userRepository.findOne({
         where: { id: +dto.user_id },
@@ -127,9 +135,8 @@ Comunícate con Seguros MAB para renovarla.
       const { user_id, inicio_vigencia, ...rest } = dto;
 
       const inicio = new Date(inicio_vigencia);
-      const fin = addYears(inicio, 1); // 🔥 1 año automático
+      const fin = addYears(inicio, 1);
 
-      // Determinar company_id: usar el del creador o el del usuario
       const companyId = creatorCompanyId || user.company?.id;
 
       const policyData: any = {
@@ -139,14 +146,41 @@ Comunícate con Seguros MAB para renovarla.
         user,
       };
 
-      // Solo asignar company si existe (después de ejecutar script SQL será obligatorio)
       if (companyId) {
         policyData.company = { id: companyId } as any;
       }
 
       const policy = this.policyRepository.create(policyData);
+      const saved: any = await this.policyRepository.save(policy);
 
-      const saved = await this.policyRepository.save(policy);
+      const createdSnapshot = {
+        policy_number: saved.policy_number,
+        tipo_poliza: saved.tipo_poliza,
+        tipo_riesgo: saved.tipo_riesgo,
+        placa: saved.placa,
+        valor_asegurado: saved.valor_asegurado,
+        valor_comercial: saved.valor_comercial,
+        valor_accesorios: saved.valor_accesorios,
+        valor_total_comercial: saved.valor_total_comercial,
+        inicio_vigencia: saved.inicio_vigencia,
+        fin_vigencia: saved.fin_vigencia,
+        user_id: user.id,
+        company_id: companyId || null,
+      };
+
+      // 📝 Auditoría: Creación
+      await this.auditService.recordLog({
+        userId: currentUser?.id || currentUser?.id_user || null,
+        userEmail:
+          currentUser?.email || currentUser?.user_name || 'Super Usuario',
+        action: 'CREATE',
+        entity: 'Policy',
+        entityId: String(saved.id_policy),
+        previousData: null,
+        newData: createdSnapshot,
+        ipAddress: clientIp || null, // 👈 Se asigna la IP
+      });
+
       return {
         message: 'Policy created!',
         policy: saved,
@@ -163,7 +197,7 @@ Comunícate con Seguros MAB para renovarla.
       placa?: string;
       limit?: number;
       skip?: number;
-      company_id?: number; // Para filtrar por empresa
+      company_id?: number;
     },
     requesterCompanyId?: number,
   ) {
@@ -191,9 +225,6 @@ Comunícate con Seguros MAB para renovarla.
         query.andWhere('policy.placa ILIKE :pl', { pl: `%${placa}%` });
       }
 
-      // Filtrar por company_id
-      // Si se proporciona company_id explícitamente (super_user), usarlo
-      // Si no, usar el company_id del requester (admin solo ve su empresa)
       const filterCompanyId =
         company_id !== undefined
           ? company_id
@@ -214,7 +245,7 @@ Comunícate con Seguros MAB para renovarla.
   async findOne(id_policy: number) {
     const policy = await this.policyRepository.findOne({
       where: { id_policy },
-      relations: ['user'],
+      relations: ['user', 'company'],
     });
 
     if (!policy)
@@ -228,7 +259,6 @@ Comunícate con Seguros MAB para renovarla.
       user: { id: userId },
     };
 
-    // Si el usuario tiene company_id, filtrar por él
     if (userCompanyId !== undefined && userCompanyId !== null) {
       whereConditions.company = { id: userCompanyId };
     }
@@ -239,15 +269,36 @@ Comunícate con Seguros MAB para renovarla.
     });
   }
 
-  async update(id_policy: number, dto: UpdatePolicyDto) {
+  async update(
+    id_policy: number,
+    dto: UpdatePolicyDto,
+    currentUser?: any,
+    clientIp?: string,
+  ) {
     console.log('DTO RECIBIDO EN UPDATE:', dto);
     try {
-      const { user_id, inicio_vigencia, company_id, ...rest } = dto as any;
+      const currentPolicy = await this.findOne(id_policy);
 
+      // Snapshot plano del estado anterior (sin relaciones anidadas complejas)
+      const previousSnapshot = {
+        policy_number: currentPolicy.policy_number,
+        tipo_poliza: currentPolicy.tipo_poliza,
+        tipo_riesgo: currentPolicy.tipo_riesgo,
+        placa: currentPolicy.placa,
+        valor_asegurado: currentPolicy.valor_asegurado,
+        valor_comercial: currentPolicy.valor_comercial,
+        valor_accesorios: currentPolicy.valor_accesorios,
+        valor_total_comercial: currentPolicy.valor_total_comercial,
+        inicio_vigencia: currentPolicy.inicio_vigencia,
+        fin_vigencia: currentPolicy.fin_vigencia,
+        user_id: currentPolicy.user?.id || null,
+        company_id: currentPolicy.company?.id || null,
+      };
+
+      const { user_id, inicio_vigencia, company_id, ...rest } = dto as any;
       const updateData: any = { ...rest };
 
       if (inicio_vigencia) {
-        // Asegurar que se interprete en hora local (evita que UTC reste horas y cambie de día)
         const fechaStr =
           typeof inicio_vigencia === 'string'
             ? inicio_vigencia.substring(0, 10)
@@ -258,46 +309,110 @@ Comunícate con Seguros MAB para renovarla.
         updateData.fin_vigencia = addYears(inicioDate, 1);
       }
 
-      const policy = await this.policyRepository.preload({
+      const policyToSave = await this.policyRepository.preload({
         id_policy,
         ...updateData,
       });
 
-      if (!policy)
+      if (!policyToSave)
         throw new NotFoundException(`Policy with id ${id_policy} not found`);
 
       if (user_id) {
         const user = await this.userRepository.findOneBy({ id: +user_id });
         if (!user)
           throw new NotFoundException(`User with id ${user_id} not found`);
-        policy.user = user;
+        policyToSave.user = user;
       }
 
       if (company_id !== undefined) {
         if (company_id !== null && company_id !== '') {
-          policy.company = { id: Number(company_id) } as any;
+          policyToSave.company = { id: Number(company_id) } as any;
         } else {
-          policy.company = null as any;
+          policyToSave.company = null as any;
         }
       }
 
-      const saved = await this.policyRepository.save(policy);
-      return { message: 'Policy updated!', policy: saved };
+      await this.policyRepository.save(policyToSave);
+
+      // Reconsultamos para obtener el estado persistido definitivo
+      const updatedPolicy = await this.findOne(id_policy);
+
+      // Snapshot plano del nuevo estado
+      const newSnapshot = {
+        policy_number: updatedPolicy.policy_number,
+        tipo_poliza: updatedPolicy.tipo_poliza,
+        tipo_riesgo: updatedPolicy.tipo_riesgo,
+        placa: updatedPolicy.placa,
+        valor_asegurado: updatedPolicy.valor_asegurado,
+        valor_comercial: updatedPolicy.valor_comercial,
+        valor_accesorios: updatedPolicy.valor_accesorios,
+        valor_total_comercial: updatedPolicy.valor_total_comercial,
+        inicio_vigencia: updatedPolicy.inicio_vigencia,
+        fin_vigencia: updatedPolicy.fin_vigencia,
+        user_id: updatedPolicy.user?.id || null,
+        company_id: updatedPolicy.company?.id || null,
+      };
+
+      // 📝 Registro de auditoría: MODIFICACIÓN
+      await this.auditService.recordLog({
+        userId: currentUser?.id || currentUser?.id_user || null,
+        userEmail:
+          currentUser?.email || currentUser?.user_name || 'Super Usuario',
+        action: 'UPDATE',
+        entity: 'Policy',
+        entityId: String(id_policy),
+        previousData: previousSnapshot,
+        newData: newSnapshot,
+        ipAddress: clientIp || null, // 👈 Se guarda la IP
+      });
+
+      return { message: 'Policy updated!', policy: updatedPolicy };
     } catch (error) {
       this.handlerErrors(error);
     }
   }
 
-  async remove(id_policy: number) {
+  async remove(id_policy: number, currentUser?: any, clientIp?: string) {
     try {
-      const policy = await this.findOne(id_policy);
+      const currentPolicy = await this.findOne(id_policy);
+      if (!currentPolicy)
+        throw new NotFoundException(`Policy with id ${id_policy} not found`);
+
+      const previousSnapshot = {
+        policy_number: currentPolicy.policy_number,
+        tipo_poliza: currentPolicy.tipo_poliza,
+        tipo_riesgo: currentPolicy.tipo_riesgo,
+        placa: currentPolicy.placa,
+        valor_asegurado: currentPolicy.valor_asegurado,
+        valor_comercial: currentPolicy.valor_comercial,
+        valor_accesorios: currentPolicy.valor_accesorios,
+        valor_total_comercial: currentPolicy.valor_total_comercial,
+        inicio_vigencia: currentPolicy.inicio_vigencia,
+        fin_vigencia: currentPolicy.fin_vigencia,
+        user_id: currentPolicy.user?.id || null,
+        company_id: currentPolicy.company?.id || null,
+      };
+
       await this.policyRepository.delete({ id_policy });
+
+      // 📝 Auditoría: Eliminación
+      await this.auditService.recordLog({
+        userId: currentUser?.id || currentUser?.id_user || null,
+        userEmail:
+          currentUser?.email || currentUser?.user_name || 'Super Usuario',
+        action: 'DELETE',
+        entity: 'Policy',
+        entityId: String(id_policy),
+        previousData: previousSnapshot,
+        newData: null,
+        ipAddress: clientIp || null, // 👈 Se asigna la IP
+      });
+
       return `Policy with id ${id_policy} was deleted`;
     } catch (error) {
       this.handlerErrors(error);
     }
   }
-
   private handlerErrors(error: any) {
     this.logger.error(error);
     throw new BadRequestException(error?.message || 'Unexpected error');

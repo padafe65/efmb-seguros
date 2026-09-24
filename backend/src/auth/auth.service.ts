@@ -19,6 +19,7 @@ import { UpdateUserDTO } from './dto/update-user.dto';
 import { PaginationDto } from 'src/common/dto/pagination.dto';
 import { NotificationsService } from 'src/notifications/notifications.service';
 import { randomBytes } from 'crypto';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class AuthService {
@@ -33,6 +34,8 @@ export class AuthService {
     private readonly jwtService: JwtService,
 
     private readonly notificationsService: NotificationsService,
+
+    private readonly auditService: AuditService,
   ) {}
 
   async createUserWithOptionalCreator(
@@ -96,7 +99,25 @@ export class AuthService {
       }
 
       const user = this.UsersRepository.create(userDataToCreate);
-      await this.UsersRepository.save(user);
+      const savedUser: any = await this.UsersRepository.save(user);
+
+      // 📝 Auditoría de creación de usuario
+      await this.auditService.recordLog({
+        userId: creator ? creator.id : savedUser.id,
+        userEmail: creator ? creator.email : savedUser.email,
+        action: 'CREATE',
+        entity: 'User',
+        entityId: String(savedUser.id),
+        previousData: null,
+        newData: {
+          id: savedUser.id,
+          user_name: savedUser.user_name,
+          email: savedUser.email,
+          documento: savedUser.documento,
+          roles: finalRoles,
+          company_id: targetCompanyId,
+        },
+      });
 
       return {
         user: {
@@ -110,8 +131,9 @@ export class AuthService {
       this.handlerErrors(error);
     }
   }
-  async loginUser(loginUserDto: LoginUserDTO) {
-    const { email, user_password } = loginUserDto;
+
+  async loginUser(loginUserDTO: LoginUserDTO) {
+    const { email, user_password } = loginUserDTO;
 
     const user = await this.UsersRepository.findOne({
       select: {
@@ -151,6 +173,7 @@ export class AuthService {
       token: this.jwtService.sign(payload),
     };
   }
+
   async findAllUsers(
     params: {
       user_name?: string;
@@ -158,7 +181,7 @@ export class AuthService {
       documento?: string;
       limit?: number;
       skip?: number;
-      company_id?: number; // Para filtrar por empresa
+      company_id?: number;
     },
     requesterCompanyId?: number,
   ) {
@@ -178,15 +201,12 @@ export class AuthService {
       whereConditions.documento = ILike(`%${documento}%`);
     }
 
-    // Filtrar por company_id si se proporciona (super_user puede filtrar)
-    // O si el requester es admin, solo ver su empresa
     if (company_id !== undefined) {
       whereConditions.company = { id: company_id };
     } else if (
       requesterCompanyId !== undefined &&
       requesterCompanyId !== null
     ) {
-      // Admin solo ve usuarios de su empresa
       whereConditions.company = { id: requesterCompanyId };
     }
 
@@ -217,7 +237,6 @@ export class AuthService {
       { documento: ILike(`%${term}%`) },
     ];
 
-    // Si el requester es admin, filtrar por su empresa
     if (requesterCompanyId !== undefined && requesterCompanyId !== null) {
       whereConditions.forEach((condition) => {
         condition.company = { id: requesterCompanyId };
@@ -231,47 +250,82 @@ export class AuthService {
     });
   }
 
-  async deleteUser(id: number) {
-    const user = await this.UsersRepository.findOneBy({ id });
+  async deleteUser(id: number, currentUser?: any) {
+    const user = await this.UsersRepository.findOne({
+      where: { id },
+      relations: ['company'],
+    });
     if (!user) throw new NotFoundException(`User with id ${id} not found`);
+
+    const { user_password: _pwd, ...userSnapshot } = user as any;
+
     await this.UsersRepository.delete(id);
+
+    // 📝 Auditoría de eliminación
+    await this.auditService.recordLog({
+      userId: currentUser?.id || null,
+      userEmail: currentUser?.email || 'Super Usuario',
+      action: 'DELETE',
+      entity: 'User',
+      entityId: String(id),
+      previousData: userSnapshot,
+      newData: null,
+    });
+
     return { message: `User ${id} deleted` };
   }
 
-  async updateUser(userId: number, data: any) {
-    const user = await this.UsersRepository.findOne({ where: { id: userId } });
+  async updateUser(userId: number, data: any, currentUser?: any) {
+    const user = await this.UsersRepository.findOne({
+      where: { id: userId },
+      relations: ['company'],
+    });
 
     if (!user) throw new NotFoundException('User not found');
 
-    // Si llega password y no es vacío, hashearla
+    // 📸 1. Snapshot del estado anterior (omitiendo contraseña)
+    const { user_password: _pwd, ...previousSnapshot } = user as any;
+
+    // Hasheo si cambia contraseña
     if (data && data.user_password) {
       data.user_password = bcrypt.hashSync(
         data.user_password,
         Number(this.configService.get('SALT_ROUNDS_DEV') || 10),
       );
     } else {
-      // si el campo está presente pero vacío, eliminarlo para NO sobrescribir
       if (data && 'user_password' in data && !data.user_password) {
         delete data.user_password;
       }
     }
 
-    // Manejar company_id si viene en los datos
+    // Asignación de empresa
     if (data && 'company_id' in data) {
       if (data.company_id !== null && data.company_id !== undefined) {
         (user as any).company = { id: data.company_id };
       } else {
         (user as any).company = null;
       }
-      delete data.company_id; // Eliminar del data para no sobrescribir
+      delete data.company_id;
     }
 
-    Object.assign(user, data); // copiar cambios
+    Object.assign(user, data);
 
     try {
-      await this.UsersRepository.save(user);
-      // devolver usuario sin password
-      const { user_password, ...rest } = user as any;
+      const savedUser = await this.UsersRepository.save(user);
+      const { user_password, ...rest } = savedUser as any;
+
+      // 📝 2. Log con el usuario autenticado que ejecutó la acción
+      await this.auditService.recordLog({
+        userId: currentUser?.id || currentUser?.id_user || null,
+        userEmail:
+          currentUser?.email || currentUser?.user_name || 'Super Usuario',
+        action: 'UPDATE',
+        entity: 'User',
+        entityId: String(userId),
+        previousData: previousSnapshot,
+        newData: rest,
+      });
+
       return {
         message: 'Usuario actualizado correctamente',
         user: rest,
@@ -284,12 +338,11 @@ export class AuthService {
   /**
    * Actualiza los roles de un usuario (solo super_user puede hacerlo)
    */
-  async updateUserRoles(userId: number, roles: string[]) {
+  async updateUserRoles(userId: number, roles: string[], currentUser?: any) {
     const user = await this.UsersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException(`User with id ${userId} not found`);
 
-    // Validar que los roles sean válidos
-    const validRoles = ['user', 'admin', 'super_user'];
+    const validRoles = ['user', 'admin', 'sub_admin', 'super_user'];
     const rolesInvalidos = roles.filter((r) => !validRoles.includes(r));
     if (rolesInvalidos.length > 0) {
       throw new BadRequestException(
@@ -297,10 +350,25 @@ export class AuthService {
       );
     }
 
+    const previousRoles = [...(user.roles || [])];
+
     user.roles = roles as any;
     await this.UsersRepository.save(user);
 
     const { user_password, ...rest } = user as any;
+
+    // 📝 Log con el usuario autenticado que cambió los roles
+    await this.auditService.recordLog({
+      userId: currentUser?.id || currentUser?.id_user || null,
+      userEmail:
+        currentUser?.email || currentUser?.user_name || 'Super Usuario',
+      action: 'UPDATE',
+      entity: 'UserRoles',
+      entityId: String(userId),
+      previousData: { roles: previousRoles },
+      newData: { roles: user.roles },
+    });
+
     return {
       message: 'Roles actualizados correctamente',
       user: rest,
@@ -314,7 +382,6 @@ export class AuthService {
     const user = await this.UsersRepository.findOne({ where: { email } });
 
     if (!user) {
-      // Por seguridad, no revelamos si el email existe o no
       this.logger.warn(
         `Intento de restablecimiento para email no existente: ${email}`,
       );
@@ -324,21 +391,17 @@ export class AuthService {
       };
     }
 
-    // Generar token único
     const resetToken = randomBytes(32).toString('hex');
     const resetExpires = new Date();
-    resetExpires.setHours(resetExpires.getHours() + 1); // Expira en 1 hora
+    resetExpires.setHours(resetExpires.getHours() + 1);
 
-    // Guardar token en la base de datos
     user.reset_password_token = resetToken;
     user.reset_password_expires = resetExpires;
     await this.UsersRepository.save(user);
 
-    // Generar enlace de restablecimiento
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
 
-    // Enviar email
     try {
       await this.notificationsService.enviarEmailRestablecimiento(
         user.email,
@@ -351,7 +414,6 @@ export class AuthService {
         `❌ Error enviando email de restablecimiento a ${email}`,
         error,
       );
-      // Limpiar token si falla el envío
       user.reset_password_token = null;
       user.reset_password_expires = null;
       await this.UsersRepository.save(user);
@@ -369,7 +431,6 @@ export class AuthService {
    * Valida token y restablece la contraseña
    */
   async resetPasswordWithToken(token: string, newPassword: string) {
-    // Buscar usuario con el token válido
     const user = await this.UsersRepository.findOne({
       where: {
         reset_password_token: token,
@@ -380,12 +441,10 @@ export class AuthService {
       throw new BadRequestException('Token inválido o expirado');
     }
 
-    // Verificar que el token no haya expirado
     if (
       !user.reset_password_expires ||
       user.reset_password_expires < new Date()
     ) {
-      // Limpiar token expirado
       user.reset_password_token = null;
       user.reset_password_expires = null;
       await this.UsersRepository.save(user);
@@ -394,20 +453,17 @@ export class AuthService {
       );
     }
 
-    // Validar que la nueva contraseña tenga al menos 4 caracteres
     if (!newPassword || newPassword.length < 4) {
       throw new BadRequestException(
         'La contraseña debe tener al menos 4 caracteres',
       );
     }
 
-    // Hashear la nueva contraseña
     const hashedPassword = bcrypt.hashSync(
       newPassword,
       Number(this.configService.get('SALT_ROUNDS_DEV') || 10),
     );
 
-    // Actualizar contraseña y limpiar token
     user.user_password = hashedPassword;
     user.reset_password_token = null;
     user.reset_password_expires = null;
@@ -448,7 +504,6 @@ export class AuthService {
   private handlerErrors(error: any) {
     this.logger.error(error);
 
-    // Código 1062 o ER_DUP_ENTRY es duplicado en MySQL/MariaDB
     if (
       error &&
       (error.code === 'ER_DUP_ENTRY' ||

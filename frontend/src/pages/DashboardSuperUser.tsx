@@ -4,6 +4,7 @@ import API from "../api/axiosConfig";
 import { useNavigate } from "react-router-dom";
 import "../App.css";
 import { logout } from "../utils/logout";
+import AuditView from "../components/AuditView";
 
 type User = {
   id: number;
@@ -41,7 +42,7 @@ export default function DashboardSuperUser(): React.JSX.Element {
   const [newRoles, setNewRoles] = useState<string[]>([]);
   const [editingCompany, setEditingCompany] = useState<number | null>(null);
   const [newCompanyId, setNewCompanyId] = useState<string>("");
-  const [activeTab, setActiveTab] = useState<"users" | "policies" | "stats" | "companies">("users");
+const [activeTab, setActiveTab] = useState<"users" | "policies" | "stats" | "companies" | "audit">("users");
   const [companies, setCompanies] = useState<any[]>([]);
   const [filterCompanyId, setFilterCompanyId] = useState<string>("");
   const [editingCompanyData, setEditingCompanyData] = useState<any>(null);
@@ -443,6 +444,16 @@ export default function DashboardSuperUser(): React.JSX.Element {
         <button className="admin-btn" onClick={() => navigate("/admin/policies/create")}>
           ➕ Crear Póliza
         </button>
+        <button
+          className={`admin-btn ${activeTab === "audit" ? "active" : ""}`}
+          onClick={() => setActiveTab("audit")}
+          style={{
+            background: activeTab === "audit" ? "#6c5ce7" : "#8e44ad",
+            color: "white",
+          }}
+        >
+          📜 Auditoría
+        </button>
         <button className="admin-btn secondary" onClick={() => logout(navigate)}>
           🚪 Cerrar Sesión
         </button>
@@ -632,7 +643,7 @@ export default function DashboardSuperUser(): React.JSX.Element {
                       <td>
                         {editingRoles === u.id ? (
                           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                            {["user", "admin", "super_user"].map((role) => (
+                            {["user", "admin", "sub_admin", "super_user"].map((role) => (
                               <label key={role} style={{ display: "flex", alignItems: "center", gap: 4 }}>
                                 <input
                                   type="checkbox"
@@ -824,6 +835,13 @@ export default function DashboardSuperUser(): React.JSX.Element {
               </table>
             </div>
           )}
+        </section>
+      )}
+
+            {/* Tab: Auditoría */}
+      {activeTab === "audit" && (
+        <section className="admin-section">
+          <AuditView />
         </section>
       )}
 

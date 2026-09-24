@@ -8,6 +8,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from './strategies/jwt-strategy';
 import { NotificationsModule } from 'src/notifications/notifications.module';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   controllers: [AuthController],
@@ -15,36 +16,28 @@ import { NotificationsModule } from 'src/notifications/notifications.module';
   imports: [
     ConfigModule,
     NotificationsModule, // Para enviar emails de restablecimiento
+    AuditModule, // 👈 Agregar aquí
 
-    TypeOrmModule.forFeature([
-      UsersEntity
-    ]),
+    TypeOrmModule.forFeature([UsersEntity]),
 
     PassportModule.register({
-      defaultStrategy: 'jwt'
+      defaultStrategy: 'jwt',
     }),
 
-
     //Importar JWTMODULE
-    JwtModule.registerAsync(
-      {
-        imports: [ConfigModule],
-        inject: [ConfigService],
-        useFactory: (configService: ConfigService) =>{
-          return{
-            secret: configService.get('SECRET_JWT_KEY'),
-            signOptions:{
-              expiresIn:'2h'
-            }
-          }
-        }
-      }
-    )
-
-
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => {
+        return {
+          secret: configService.get('SECRET_JWT_KEY'),
+          signOptions: {
+            expiresIn: '2h',
+          },
+        };
+      },
+    }),
   ],
-  exports: [
-    TypeOrmModule
-  ]
+  exports: [TypeOrmModule],
 })
 export class AuthModule {}

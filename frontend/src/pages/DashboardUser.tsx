@@ -852,65 +852,71 @@ export default function DashboardUser(): JSX.Element {
     </div>
   );
 
-  const renderPromociones = () => (
+const renderPromociones = () => (
     <div>
       <h2>🎁 Promociones y Ofertas</h2>
       <div style={{ marginTop: "20px" }}>
+        
+        {/* Tarjeta 1: Renovación Anticipada */}
         <div style={{
-          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-          color: "white",
+          background: "linear-gradient(135deg, #4834d4 0%, #686de0 100%)",
+          color: "#ffffff",
           padding: "30px",
-          borderRadius: "8px",
-          marginBottom: "20px"
+          borderRadius: "10px",
+          marginBottom: "20px",
+          boxShadow: "0 4px 12px rgba(72, 52, 212, 0.25)"
         }}>
-          <h3 style={{ marginTop: 0 }}>🎉 Renovación Anticipada</h3>
-          <p>
-            Renueva tu póliza 30 días antes de su vencimiento y obtén un <strong>10% de descuento</strong> 
-            en tu prima. ¡No pierdas esta oportunidad!
+          <h3 style={{ marginTop: 0, color: "#ffffff", fontSize: "1.4rem" }}>🎉 Renovación Anticipada</h3>
+          <p style={{ color: "#f1f2f6", fontSize: "15px", lineHeight: "1.6", margin: "10px 0" }}>
+            Renueva tu póliza 30 días antes de su vencimiento y obtén un <strong style={{ color: "#ffeaa7" }}>10% de descuento</strong> en tu prima. ¡No pierdas esta oportunidad!
           </p>
           <button 
             onClick={() => handleViewChange("polizas")}
             style={{
               marginTop: "15px",
               padding: "10px 20px",
-              background: "white",
-              color: "#667eea",
+              background: "#ffffff",
+              color: "#4834d4",
               border: "none",
-              borderRadius: "4px",
+              borderRadius: "6px",
               cursor: "pointer",
-              fontWeight: "bold"
+              fontWeight: "bold",
+              boxShadow: "0 2px 6px rgba(0,0,0,0.15)"
             }}
           >
             Ver mis pólizas
           </button>
         </div>
 
+        {/* Tarjeta 2: Seguro Adicional (Fondo degradado magenta/coral oscuro con texto 100% blanco y legible) */}
         <div style={{
-          background: "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
-          color: "white",
+          background: "linear-gradient(135deg, #d63031 0%, #e84393 100%)",
+          color: "#ffffff",
           padding: "30px",
-          borderRadius: "8px",
-          marginBottom: "20px"
+          borderRadius: "10px",
+          marginBottom: "20px",
+          boxShadow: "0 4px 12px rgba(232, 67, 147, 0.25)"
         }}>
-          <h3 style={{ marginTop: 0 }}>🚗 Seguro Adicional</h3>
-          <p>
-            Contrata un segundo seguro y obtén un <strong>15% de descuento</strong> en ambas pólizas. 
-            Protege más, paga menos.
+          <h3 style={{ marginTop: 0, color: "#ffffff", fontSize: "1.4rem" }}>🚗 Seguro Adicional</h3>
+          <p style={{ color: "#ffffff", fontSize: "15px", lineHeight: "1.6", margin: "10px 0" }}>
+            Contrata un segundo seguro y obtén un <strong style={{ color: "#ffeaa7" }}>15% de descuento</strong> en ambas pólizas. Protege más, paga menos.
           </p>
         </div>
 
+        {/* Tarjeta 3: Referidos */}
         <div style={{
-          background: "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
-          color: "white",
+          background: "linear-gradient(135deg, #0984e3 0%, #00cec9 100%)",
+          color: "#ffffff",
           padding: "30px",
-          borderRadius: "8px"
+          borderRadius: "10px",
+          boxShadow: "0 4px 12px rgba(9, 132, 227, 0.25)"
         }}>
-          <h3 style={{ marginTop: 0 }}>👥 Referidos</h3>
-          <p>
-            Refiere a un amigo y ambos obtendrán beneficios especiales. Contacta con nosotros 
-            para más información.
+          <h3 style={{ marginTop: 0, color: "#ffffff", fontSize: "1.4rem" }}>👥 Referidos</h3>
+          <p style={{ color: "#ffffff", fontSize: "15px", lineHeight: "1.6", margin: "10px 0" }}>
+            Refiere a un amigo y ambos obtendrán beneficios especiales. Contacta con nosotros para más información.
           </p>
         </div>
+
       </div>
     </div>
   );
