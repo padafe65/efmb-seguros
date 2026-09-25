@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { CompanyEntity } from './entities/company.entity';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
+import { AuditService } from '../audit/audit.service';
+
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -14,15 +16,20 @@ export class CompaniesService {
   constructor(
     @InjectRepository(CompanyEntity)
     private readonly companyRepository: Repository<CompanyEntity>,
+    private readonly auditService: AuditService,
   ) {}
 
-  async create(createDto: CreateCompanyDto, logoFile?: Express.Multer.File) {
+  async create(
+    createDto: CreateCompanyDto,
+    logoFile?: Express.Multer.File,
+    currentUser?: any,
+    clientIp?: string,
+  ) {
     try {
       let logoUrl = createDto.logo_url;
 
       // Si hay un archivo subido, multer ya lo guardó en diskStorage
       if (logoFile && logoFile.filename) {
-        // Multer ya guardó el archivo, solo necesitamos la URL
         logoUrl = `/uploads/logos/${logoFile.filename}`;
         this.logger.log(`✅ Logo guardado: ${logoUrl}`);
       }
@@ -42,7 +49,21 @@ export class CompaniesService {
       });
 
       const savedCompany = await this.companyRepository.save(company);
-      this.logger.log(`✅ Empresa creada: ${savedCompany.nombre} (ID: ${savedCompany.id})`);
+      this.logger.log(
+        `✅ Empresa creada: \({savedCompany.nombre} (ID:\){savedCompany.id})`,
+      );
+
+      // 📝 Auditoría de creación de empresa
+      await this.auditService.recordLog({
+        userId: currentUser?.id || currentUser?.id_user || null,
+        userEmail: currentUser?.email || 'Super Usuario',
+        action: 'CREATE',
+        entity: 'Company',
+        entityId: String(savedCompany.id),
+        previousData: null,
+        newData: savedCompany,
+        ipAddress: clientIp,
+      });
 
       return savedCompany;
     } catch (error) {
@@ -71,8 +92,15 @@ export class CompaniesService {
     return company;
   }
 
-  async update(id: number, updateDto: UpdateCompanyDto, logoFile?: Express.Multer.File) {
+  async update(
+    id: number,
+    updateDto: UpdateCompanyDto,
+    logoFile?: Express.Multer.File,
+    currentUser?: any,
+    clientIp?: string,
+  ) {
     const company = await this.findOne(id);
+    const previousSnapshot = { ...company };
 
     // Si hay un archivo subido, multer ya lo guardó en diskStorage
     if (logoFile && logoFile.filename) {
@@ -84,7 +112,6 @@ export class CompaniesService {
         }
       }
 
-      // Multer ya guardó el archivo, solo necesitamos la URL
       updateDto.logo_url = `/uploads/logos/${logoFile.filename}`;
       this.logger.log(`✅ Logo actualizado: ${updateDto.logo_url}`);
     }
@@ -92,21 +119,47 @@ export class CompaniesService {
     Object.assign(company, updateDto);
     const updatedCompany = await this.companyRepository.save(company);
 
-    this.logger.log(`✅ Empresa actualizada: ${updatedCompany.nombre} (ID: ${id})`);
+    this.logger.log(
+      `✅ Empresa actualizada: \({updatedCompany.nombre} (ID:\){id})`,
+    );
+
+    // 📝 Auditoría de actualización
+    await this.auditService.recordLog({
+      userId: currentUser?.id || currentUser?.id_user || null,
+      userEmail: currentUser?.email || 'Super Usuario',
+      action: 'UPDATE',
+      entity: 'Company',
+      entityId: String(id),
+      previousData: previousSnapshot,
+      newData: updatedCompany,
+      ipAddress: clientIp,
+    });
 
     return updatedCompany;
   }
 
-  async toggleCompanyStatus(id: number) {
+  async toggleCompanyStatus(id: number, currentUser?: any, clientIp?: string) {
     const company = await this.findOne(id);
-    
-    // Cambiar el estado
+    const previousSnapshot = { ...company };
+
     company.isactive = !company.isactive;
-    await this.companyRepository.save(company);
+    const savedCompany = await this.companyRepository.save(company);
 
     this.logger.log(
-      `✅ Empresa ${company.isactive ? 'activada' : 'desactivada'}: ${company.nombre} (ID: ${id})`
+      `✅ Empresa \({company.isactive ? 'activada' : 'desactivada'}:\){company.nombre} (ID: ${id})`,
     );
+
+    // 📝 Auditoría de cambio de estado
+    await this.auditService.recordLog({
+      userId: currentUser?.id || currentUser?.id_user || null,
+      userEmail: currentUser?.email || 'Super Usuario',
+      action: 'UPDATE',
+      entity: 'CompanyStatus',
+      entityId: String(id),
+      previousData: previousSnapshot,
+      newData: savedCompany,
+      ipAddress: clientIp,
+    });
 
     return {
       message: `Empresa ${company.isactive ? 'activada' : 'desactivada'} correctamente`,
@@ -118,12 +171,26 @@ export class CompaniesService {
     };
   }
 
-  async remove(id: number) {
+  async remove(id: number, currentUser?: any, clientIp?: string) {
     const company = await this.findOne(id);
-    company.isactive = false;
-    await this.companyRepository.save(company);
+    const previousSnapshot = { ...company };
 
-    this.logger.log(`✅ Empresa desactivada: ${company.nombre} (ID: ${id})`);
+    company.isactive = false;
+    const deactivatedCompany = await this.companyRepository.save(company);
+
+    this.logger.log(`✅ Empresa desactivada: \({company.nombre} (ID:\){id})`);
+
+    // 📝 Auditoría de eliminación lógica
+    await this.auditService.recordLog({
+      userId: currentUser?.id || currentUser?.id_user || null,
+      userEmail: currentUser?.email || 'Super Usuario',
+      action: 'DELETE',
+      entity: 'Company',
+      entityId: String(id),
+      previousData: previousSnapshot,
+      newData: deactivatedCompany,
+      ipAddress: clientIp,
+    });
 
     return { message: 'Empresa desactivada correctamente' };
   }

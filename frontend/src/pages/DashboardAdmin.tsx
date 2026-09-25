@@ -4,6 +4,7 @@
   import { useNavigate } from "react-router-dom";
   import "../App.css";
   import { logout } from "../utils/logout";
+  import AuditView from "../components/AuditView";
 
 
   type User = {
@@ -17,6 +18,7 @@
   type Policy = any;
 
   export default function DashboardAdmin(): JSX.Element {
+    const [activeTab, setActiveTab] = useState<"general" | "audit">("general");
     const [users, setUsers] = useState<User[]>([]);
     const [policies, setPolicies] = useState<Policy[]>([]);
     const [filterUserId, setFilterUserId] = useState<string>("");
@@ -149,14 +151,24 @@ useEffect(() => {
         <div className="admin-header">
           <h2>Panel Administrador</h2>
         </div>
-
+        
         <div className="admin-actions" style={{ display: "flex", gap: 12, marginBottom: 12 }}>
           <button className="admin-btn" onClick={loadUsers}>Refrescar Usuarios</button>
           <button className="admin-btn" onClick={() => navigate("/admin/users/create")}>Crear Usuario</button>
           <button className="admin-btn" onClick={() => navigate("/admin/policies/create")}>Crear Póliza</button>
+          <button className="admin-btn" onClick={() => setActiveTab("audit")}>
+            Registro de Auditoría
+          </button>
+          <button className="admin-btn" onClick={() => setActiveTab("general")}>
+            Panel General
+          </button>
           <button className="admin-btn secondary" onClick={() => logout(navigate)}>Cerrar Sesión</button>
         </div>
 
+        {activeTab === "audit" ? (
+          <AuditView />
+        ) : (
+          <>
         <section className="admin-section" style={{ marginBottom: 20 }}>
           <h3>Usuarios</h3>
 
@@ -340,6 +352,8 @@ useEffect(() => {
   )}
 
         </section>
+          </>
+        )}
       </div>
     );
   }

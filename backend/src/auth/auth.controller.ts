@@ -72,16 +72,9 @@ export class AuthController {
   }
 
   @Get('users')
-  @Auth(ValidRoles.admin, ValidRoles.super_user)
+  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
   getAllUsers(@Query() query: any, @GetUser() user: any) {
     const { user_name, email, documento, limit, skip, company_id } = query;
-
-    // Super_user puede filtrar por company_id, admin solo ve su empresa
-    const requesterCompanyId = user.roles?.includes('super_user')
-      ? company_id
-        ? Number(company_id)
-        : undefined
-      : user.company?.id || user.company_id;
 
     return this.authService.findAllUsers(
       {
@@ -92,7 +85,7 @@ export class AuthController {
         skip: skip ? Number(skip) : undefined,
         company_id: company_id ? Number(company_id) : undefined,
       },
-      requesterCompanyId,
+      user,
     );
   }
 
@@ -103,7 +96,7 @@ export class AuthController {
   }
 
   @Get('search')
-  @Auth(ValidRoles.admin, ValidRoles.super_user)
+  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
   search(@Query('q') q: string, @GetUser() user: any) {
     const requesterCompanyId = user.roles?.includes('super_user')
       ? undefined
@@ -113,7 +106,7 @@ export class AuthController {
 
   // Admin / Super User: actualizar cualquier usuario (asigna empresa, estado, datos)
   @Patch('update/:id')
-  @Auth(ValidRoles.admin, ValidRoles.super_user)
+  @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
   async updateUserAdmin(
     @Param('id') id: number,
     @Body() updateUserDto: UpdateUserDTO,
@@ -128,15 +121,15 @@ export class AuthController {
 
   // Usuario autenticado: actualiza su propio perfil (puede cambiar password)
   @Patch('update')
-  @Auth(ValidRoles.user)
-  async updateUser(@GetUser() user, @Body() updateUserDto: UpdateUserDTO) {
-    return this.authService.updateUser(user.id, updateUserDto);
+  @Auth(ValidRoles.user, ValidRoles.admin, ValidRoles.sub_admin, ValidRoles.super_user)
+  async updateUser(@GetUser() user: any, @Body() updateUserDto: UpdateUserDTO) {
+    return this.authService.updateUser(user.id, updateUserDto, user);
   }
 
   @Delete(':id')
   @Auth(ValidRoles.admin, ValidRoles.super_user)
-  deleteUser(@Param('id') id: number) {
-    return this.authService.deleteUser(+id);
+  deleteUser(@Param('id') id: number, @GetUser() currentUser: any) {
+    return this.authService.deleteUser(+id, currentUser);
   }
 
   // Super User: actualizar roles de cualquier usuario
@@ -149,6 +142,7 @@ export class AuthController {
   ) {
     return this.authService.updateUserRoles(+id, body.roles, currentUser);
   }
+
   // Solicitar restablecimiento de contraseña (envía email con token)
   @Post('forgot-password')
   async requestPasswordReset(@Body() body: { email: string }) {

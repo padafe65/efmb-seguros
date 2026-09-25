@@ -7,6 +7,7 @@ import { RespondMessageDto } from './dto/respond-message.dto';
 import { NotificationsService } from 'src/notifications/notifications.service';
 import { UsersEntity } from 'src/auth/entities/users.entity';
 import { CompanyEntity } from 'src/companies/entities/company.entity';
+import { AuditService } from 'src/audit/audit.service';
 
 @Injectable()
 export class ContactService {
@@ -20,15 +21,19 @@ export class ContactService {
     @InjectRepository(CompanyEntity)
     private readonly companyRepository: Repository<CompanyEntity>,
     private readonly notificationsService: NotificationsService,
+    private readonly auditService: AuditService,
   ) {}
 
-  async createMessage(createDto: CreateContactMessageDto, userCompanyId?: number, userId?: number) {
+  async createMessage(
+    createDto: CreateContactMessageDto,
+    userCompanyId?: number,
+    userId?: number,
+    clientIp?: string,
+  ) {
     try {
-      // Determinar el user_id final (del usuario autenticado o del DTO)
-      // Convertir a número si viene como string
-      const finalUserId = userId || (createDto.user_id ? Number(createDto.user_id) : undefined);
-      
-      // Si tenemos un user_id pero no company_id, buscar el usuario para obtener su company_id
+      const finalUserId =
+        userId || (createDto.user_id ? Number(createDto.user_id) : undefined);
+
       let finalCompanyId = userCompanyId;
       if (finalUserId && !finalCompanyId) {
         const user = await this.usersRepository.findOne({
@@ -45,32 +50,40 @@ export class ContactService {
         email: createDto.email,
         asunto: createDto.asunto,
         mensaje: createDto.mensaje,
-        user: finalUserId ? { id: finalUserId } as any : undefined,
+        user: finalUserId ? ({ id: finalUserId } as any) : undefined,
         leido: false,
         respondido: false,
       };
 
-      // Asignar company_id si lo tenemos
       if (finalCompanyId) {
         messageData.company = { id: finalCompanyId } as any;
       }
 
       const message = this.contactMessageRepository.create(messageData);
       const savedMessage = await this.contactMessageRepository.save(message);
-      
-      // Asegurar que es un objeto único, no un array
-      const savedEntity = Array.isArray(savedMessage) ? savedMessage[0] : savedMessage;
+      const savedEntity = Array.isArray(savedMessage)
+        ? savedMessage[0]
+        : savedMessage;
 
-      // Cargar relaciones necesarias para el email
+      await this.auditService.recordLog({
+        userId: finalUserId || null,
+        userEmail: savedEntity.email,
+        action: 'CREATE',
+        entity: 'ContactMessage',
+        entityId: String(savedEntity.id),
+        previousData: null,
+        newData: savedEntity,
+        ipAddress: clientIp,
+      });
+
       const messageWithRelations = await this.contactMessageRepository.findOne({
         where: { id: savedEntity.id },
         relations: ['user', 'company'],
       });
 
-      // Enviar email al administrador de la misma compañía
       await this.sendNotificationEmail(messageWithRelations || savedEntity);
 
-      this.logger.log(`✅ Mensaje de contacto creado: ${savedEntity.id}`);
+      this.logger.log(`Mensaje de contacto creado: ${savedEntity.id}`);
 
       return {
         message: 'Mensaje enviado correctamente',
@@ -84,15 +97,10 @@ export class ContactService {
 
   private async sendNotificationEmail(message: ContactMessageEntity) {
     try {
-      // Buscar el admin de la misma compañía que el usuario
-      let adminEmail = process.env.EMAIL_USER || 'padafe654@gmail.com'; // Fallback
-      
-      // Obtener company_id del mensaje
+      let adminEmail = process.env.EMAIL_USER || 'padafe654@gmail.com';
       const companyId = message.company?.id;
-      
+
       if (companyId) {
-        // Buscar usuarios con rol "admin" de la misma compañía
-        // Los roles están almacenados como array de enum en PostgreSQL
         const allUsers = await this.usersRepository.find({
           where: {
             company: { id: companyId },
@@ -100,71 +108,184 @@ export class ContactService {
           },
           relations: ['company'],
         });
-        
-        // Filtrar usuarios que tengan el rol "admin" en su array de roles
-        const adminUsers = allUsers.filter(user => {
+
+        const adminUsers = allUsers.filter((user) => {
           const roles = Array.isArray(user.roles) ? user.roles : [user.roles];
           return roles.includes('admin' as any);
         });
-        
-        // Si hay admins de esa compañía, usar el email del primero
+
         if (adminUsers && adminUsers.length > 0) {
           adminEmail = adminUsers[0].email;
           const companyName = message.company?.nombre || 'N/A';
-          this.logger.log(`📧 Enviando email al admin de la compañía "${companyName}" (ID: ${companyId}): ${adminEmail}`);
+          this.logger.log(
+            `Enviando email al admin de "\({companyName}" (ID:\){companyId}): ${adminEmail}`,
+          );
         } else {
-          this.logger.warn(`⚠️ No se encontró admin activo para la compañía ${companyId}, usando email genérico: ${adminEmail}`);
+          this.logger.warn(
+            `No se encontro admin activo para la compania \({companyId}, usando:\){adminEmail}`,
+          );
         }
       } else {
-        this.logger.log(`📧 Mensaje sin company_id, usando email genérico: ${adminEmail}`);
+        this.logger.log(
+          `Mensaje sin company_id, usando email generico: ${adminEmail}`,
+        );
       }
-      
-      const emailContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #631025, #4c55d3); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-            .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
-            .message-box { background: white; padding: 20px; margin: 20px 0; border-left: 4px solid #3498db; }
-            .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h2>Nuevo Mensaje de Contacto</h2>
-            </div>
-            <div class="content">
-              <p>Has recibido un nuevo mensaje desde el formulario de contacto:</p>
-              
-              <div class="message-box">
-                <p><strong>De:</strong> ${message.nombre}</p>
-                <p><strong>Email:</strong> ${message.email}</p>
-                <p><strong>Asunto:</strong> ${message.asunto}</p>
-                <p><strong>Mensaje:</strong></p>
-                <p style="white-space: pre-wrap;">${message.mensaje}</p>
-              </div>
 
-              <p><strong>Fecha:</strong> ${new Date(message.created_at).toLocaleString('es-ES')}</p>
-              ${message.user ? `<p><strong>Usuario registrado:</strong> ${message.user.user_name} (ID: ${message.user.id})</p>` : '<p><strong>Usuario:</strong> No registrado (visitante)</p>'}
-              
-              <p style="margin-top: 30px;">
-                <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/dashboard-admin" 
-                   style="background: #3498db; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
-                  Ver en Dashboard
-                </a>
-              </p>
-            </div>
-            <div class="footer">
-              <p>© 2026 EFMB Seguros - Sistema de Contacto</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `;
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      const userText = message.user
+        ? `Usuario registrado: \({message.user.user_name} (ID:\){message.user.id})`
+        : 'Usuario: No registrado (visitante)';
+
+      const emailContent =
+        String.fromCharCode(60) +
+        'div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;"' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'div style="background:#631025;color:white;padding:20px;text-align:center;border-radius:8px 8px 0 0;"' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'h2' +
+        String.fromCharCode(62) +
+        'Nuevo Mensaje de Contacto' +
+        String.fromCharCode(60) +
+        '/h2' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        '/div' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'div style="background:#f9f9f9;padding:30px;border-radius:0 0 8px 8px;"' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'p' +
+        String.fromCharCode(62) +
+        'Has recibido un nuevo mensaje desde el formulario de contacto:' +
+        String.fromCharCode(60) +
+        '/p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'div style="background:white;padding:20px;margin:20px 0;border-left:4px solid #3498db;"' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'strong' +
+        String.fromCharCode(62) +
+        'De: ' +
+        String.fromCharCode(60) +
+        '/strong' +
+        String.fromCharCode(62) +
+        message.nombre +
+        String.fromCharCode(60) +
+        '/p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'strong' +
+        String.fromCharCode(62) +
+        'Email: ' +
+        String.fromCharCode(60) +
+        '/strong' +
+        String.fromCharCode(62) +
+        message.email +
+        String.fromCharCode(60) +
+        '/p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'strong' +
+        String.fromCharCode(62) +
+        'Asunto: ' +
+        String.fromCharCode(60) +
+        '/strong' +
+        String.fromCharCode(62) +
+        message.asunto +
+        String.fromCharCode(60) +
+        '/p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'strong' +
+        String.fromCharCode(62) +
+        'Mensaje:' +
+        String.fromCharCode(60) +
+        '/strong' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        '/p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'p style="white-space:pre-wrap;"' +
+        String.fromCharCode(62) +
+        message.mensaje +
+        String.fromCharCode(60) +
+        '/p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        '/div' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'strong' +
+        String.fromCharCode(62) +
+        'Fecha: ' +
+        String.fromCharCode(60) +
+        '/strong' +
+        String.fromCharCode(62) +
+        new Date(message.created_at).toLocaleString('es-ES') +
+        String.fromCharCode(60) +
+        '/p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'p' +
+        String.fromCharCode(62) +
+        userText +
+        String.fromCharCode(60) +
+        '/p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'p style="margin-top:30px;"' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'a href="' +
+        frontendUrl +
+        '/dashboard-admin" style="background:#3498db;color:white;padding:10px 20px;text-decoration:none;border-radius:5px;display:inline-block;"' +
+        String.fromCharCode(62) +
+        'Ver en Dashboard' +
+        String.fromCharCode(60) +
+        '/a' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        '/p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        '/div' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'div style="text-align:center;margin-top:20px;color:#666;font-size:12px;"' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'p' +
+        String.fromCharCode(62) +
+        'EFMB Seguros - Sistema de Contacto' +
+        String.fromCharCode(60) +
+        '/p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        '/div' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        '/div' +
+        String.fromCharCode(62);
 
       await this.notificationsService.enviarCorreo(
         adminEmail,
@@ -172,21 +293,21 @@ export class ContactService {
         emailContent,
       );
 
-      this.logger.log(`✅ Email de notificación enviado a: ${adminEmail}`);
+      this.logger.log(`Email de notificacion enviado a: ${adminEmail}`);
     } catch (error) {
-      this.logger.error('Error enviando email de notificación', error);
-      // No lanzar error para que el mensaje se guarde aunque falle el email
+      this.logger.error('Error enviando email de notificacion', error);
     }
   }
 
-  async findAll(requesterCompanyId?: number, requesterId?: number, requesterRoles?: string[]) {
+  async findAll(
+    requesterCompanyId?: number,
+    requesterId?: number,
+    requesterRoles?: string[],
+  ) {
     const whereConditions: any = {};
 
-    // 🔒 FILTRADO ESPECIAL PARA sub_admin: solo puede ver mensajes de usuarios que él creó
     const isSubAdmin = requesterRoles?.includes('sub_admin');
     if (isSubAdmin && requesterId) {
-      // Filtrar mensajes donde el usuario que envió el mensaje fue creado por el sub_admin
-      // Necesitamos hacer un join con la tabla users para verificar created_by_id
       const messages = await this.contactMessageRepository
         .createQueryBuilder('message')
         .leftJoinAndSelect('message.user', 'user')
@@ -195,18 +316,20 @@ export class ContactService {
         .where('user.created_by_id = :requesterId', { requesterId })
         .orderBy('message.created_at', 'DESC')
         .getMany();
-      
-      this.logger.log(`🔒 Filtrado para sub_admin (ID: ${requesterId}): solo mensajes de usuarios creados por él`);
+
+      this.logger.log(
+        `Filtrado para sub_admin (ID: ${requesterId}): solo mensajes de usuarios creados por el`,
+      );
       return messages;
     }
 
-    // Si el requester es admin, solo ver mensajes de su empresa
     if (requesterCompanyId !== undefined && requesterCompanyId !== null) {
       whereConditions.company = { id: requesterCompanyId };
     }
 
     return await this.contactMessageRepository.find({
-      where: Object.keys(whereConditions).length > 0 ? whereConditions : undefined,
+      where:
+        Object.keys(whereConditions).length > 0 ? whereConditions : undefined,
       relations: ['user', 'responded_by_user', 'company'],
       order: { created_at: 'DESC' },
     });
@@ -239,8 +362,13 @@ export class ContactService {
     return await this.contactMessageRepository.save(message);
   }
 
-  async respondToMessage(id: number, respondDto: RespondMessageDto, respondedByUserId: number) {
-    // Cargar el mensaje con todas las relaciones necesarias, incluyendo company
+  async respondToMessage(
+    id: number,
+    respondDto: RespondMessageDto,
+    respondedByUserId: number,
+    currentUser?: any,
+    clientIp?: string,
+  ) {
     const message = await this.contactMessageRepository.findOne({
       where: { id },
       relations: ['user', 'responded_by_user', 'company'],
@@ -250,6 +378,8 @@ export class ContactService {
       throw new NotFoundException(`Mensaje con ID ${id} no encontrado`);
     }
 
+    const previousSnapshot = { ...message };
+
     message.respuesta = respondDto.respuesta;
     message.respondido = true;
     message.responded_at = new Date();
@@ -257,73 +387,163 @@ export class ContactService {
 
     const savedMessage = await this.contactMessageRepository.save(message);
 
-    // Enviar email de respuesta al usuario
+    await this.auditService.recordLog({
+      userId: currentUser?.id || respondedByUserId || null,
+      userEmail: currentUser?.email || 'Administrador',
+      action: 'UPDATE',
+      entity: 'ContactMessage',
+      entityId: String(id),
+      previousData: previousSnapshot,
+      newData: savedMessage,
+      ipAddress: clientIp,
+    });
+
     await this.sendResponseEmail(savedMessage);
 
-    this.logger.log(`✅ Respuesta enviada al mensaje ${id}`);
+    this.logger.log(`Respuesta enviada al mensaje ${id}`);
 
     return savedMessage;
   }
 
   private async sendResponseEmail(message: ContactMessageEntity) {
     try {
-      // Cargar la relación company si no está cargada
       let companyName = 'Compañía de Seguros';
       if (message.company?.nombre) {
         companyName = message.company.nombre;
       } else if (message.company) {
-        // Si solo tenemos el ID, cargar la compañía
         const companyId = (message.company as any).id;
         if (companyId) {
-          const company = await this.companyRepository.findOne({ where: { id: companyId } });
+          const company = await this.companyRepository.findOne({
+            where: { id: companyId },
+          });
           if (company) {
             companyName = company.nombre || companyName;
           }
         }
       }
 
-      const emailContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #631025, #4c55d3); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-            .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
-            .response-box { background: white; padding: 20px; margin: 20px 0; border-left: 4px solid #27ae60; }
-            .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h2>Respuesta a tu Consulta</h2>
-            </div>
-            <div class="content">
-              <p>Hola <strong>${message.nombre}</strong>,</p>
-              
-              <p>Gracias por contactarnos. Hemos recibido tu mensaje sobre:</p>
-              <p><strong>"${message.asunto}"</strong></p>
-              
-              <div class="response-box">
-                <h3>Nuestra Respuesta:</h3>
-                <p style="white-space: pre-wrap;">${message.respuesta}</p>
-              </div>
-
-              <p style="margin-top: 30px;">
-                Si tienes más preguntas, no dudes en contactarnos nuevamente.
-              </p>
-
-              <p>Atentamente,<br><strong>Equipo de ${companyName}</strong></p>
-            </div>
-            <div class="footer">
-              <p>© 2026 ${companyName} - Todos los derechos reservados</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `;
+      const emailContent =
+        String.fromCharCode(60) +
+        'div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;"' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'div style="background:#631025;color:white;padding:20px;text-align:center;border-radius:8px 8px 0 0;"' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'h2' +
+        String.fromCharCode(62) +
+        'Respuesta a tu Consulta' +
+        String.fromCharCode(60) +
+        '/h2' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        '/div' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'div style="background:#f9f9f9;padding:30px;border-radius:0 0 8px 8px;"' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'p' +
+        String.fromCharCode(62) +
+        'Hola ' +
+        String.fromCharCode(60) +
+        'strong' +
+        String.fromCharCode(62) +
+        message.nombre +
+        String.fromCharCode(60) +
+        '/strong' +
+        String.fromCharCode(62) +
+        ',' +
+        String.fromCharCode(60) +
+        '/p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'p' +
+        String.fromCharCode(62) +
+        'Gracias por contactarnos. Hemos recibido tu mensaje sobre:' +
+        String.fromCharCode(60) +
+        '/p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'strong' +
+        String.fromCharCode(62) +
+        '"' +
+        message.asunto +
+        '"' +
+        String.fromCharCode(60) +
+        '/strong' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        '/p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'div style="background:white;padding:20px;margin:20px 0;border-left:4px solid #27ae60;"' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'h3' +
+        String.fromCharCode(62) +
+        'Nuestra Respuesta:' +
+        String.fromCharCode(60) +
+        '/h3' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'p style="white-space:pre-wrap;"' +
+        String.fromCharCode(62) +
+        message.respuesta +
+        String.fromCharCode(60) +
+        '/p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        '/div' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'p style="margin-top:30px;"' +
+        String.fromCharCode(62) +
+        'Si tienes mas preguntas, no dudes en contactarnos nuevamente.' +
+        String.fromCharCode(60) +
+        '/p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'p' +
+        String.fromCharCode(62) +
+        'Atentamente,' +
+        String.fromCharCode(60) +
+        'br' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'strong' +
+        String.fromCharCode(62) +
+        'Equipo de ' +
+        companyName +
+        String.fromCharCode(60) +
+        '/strong' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        '/p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        '/div' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'div style="text-align:center;margin-top:20px;color:#666;font-size:12px;"' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        'p' +
+        String.fromCharCode(62) +
+        companyName +
+        ' - Todos los derechos reservados' +
+        String.fromCharCode(60) +
+        '/p' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        '/div' +
+        String.fromCharCode(62) +
+        String.fromCharCode(60) +
+        '/div' +
+        String.fromCharCode(62);
 
       await this.notificationsService.enviarCorreo(
         message.email,
@@ -331,15 +551,29 @@ export class ContactService {
         emailContent,
       );
 
-      this.logger.log(`✅ Email de respuesta enviado a: ${message.email}`);
+      this.logger.log(`Email de respuesta enviado a: ${message.email}`);
     } catch (error) {
       this.logger.error('Error enviando email de respuesta', error);
     }
   }
 
-  async deleteMessage(id: number) {
+  async deleteMessage(id: number, currentUser?: any, clientIp?: string) {
     const message = await this.findOne(id);
+    const previousSnapshot = { ...message };
+
     await this.contactMessageRepository.remove(message);
+
+    await this.auditService.recordLog({
+      userId: currentUser?.id || currentUser?.id_user || null,
+      userEmail: currentUser?.email || 'Super Usuario',
+      action: 'DELETE',
+      entity: 'ContactMessage',
+      entityId: String(id),
+      previousData: previousSnapshot,
+      newData: null,
+      ipAddress: clientIp,
+    });
+
     return { message: 'Mensaje eliminado correctamente' };
   }
 }

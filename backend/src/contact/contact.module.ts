@@ -6,13 +6,21 @@ import { ContactMessageEntity } from './entities/contact-message.entity';
 import { NotificationsModule } from 'src/notifications/notifications.module';
 import { UsersEntity } from 'src/auth/entities/users.entity';
 import { CompanyEntity } from 'src/companies/entities/company.entity';
+import { AuthModule } from 'src/auth/auth.module';
+import { AuditModule } from 'src/audit/audit.module';
 
 @Module({
   controllers: [ContactController],
   providers: [ContactService],
   imports: [
-    TypeOrmModule.forFeature([ContactMessageEntity, UsersEntity, CompanyEntity]),
+    TypeOrmModule.forFeature([
+      ContactMessageEntity,
+      UsersEntity,
+      CompanyEntity,
+    ]),
     NotificationsModule,
+    AuthModule,
+    AuditModule,
   ],
   exports: [ContactService],
 })

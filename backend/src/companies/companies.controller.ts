@@ -9,6 +9,7 @@ import {
   ParseIntPipe,
   UseInterceptors,
   UploadedFile,
+  Ip,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CompaniesService } from './companies.service';
@@ -31,9 +32,10 @@ export class CompaniesController {
       storage: diskStorage({
         destination: './uploads/logos',
         filename: (req, file, cb) => {
-          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const uniqueSuffix =
+            Date.now() + '-' + Math.round(Math.random() * 1e9);
           const ext = extname(file.originalname);
-          cb(null, `logo-${uniqueSuffix}${ext}`);
+          cb(null, `logo-\({uniqueSuffix}\){ext}`);
         },
       }),
       fileFilter: (req, file, cb) => {
@@ -49,9 +51,11 @@ export class CompaniesController {
   )
   create(
     @Body() createDto: CreateCompanyDto,
+    @GetUser() user: any,
+    @Ip() ip: string,
     @UploadedFile() logoFile?: Express.Multer.File,
   ) {
-    return this.companiesService.create(createDto, logoFile);
+    return this.companiesService.create(createDto, logoFile, user, ip);
   }
 
   @Get()
@@ -69,7 +73,12 @@ export class CompaniesController {
   }
 
   @Get(':id')
-  @Auth(ValidRoles.user, ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
+  @Auth(
+    ValidRoles.user,
+    ValidRoles.admin,
+    ValidRoles.super_user,
+    ValidRoles.sub_admin,
+  )
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.companiesService.findOne(id);
   }
@@ -81,9 +90,10 @@ export class CompaniesController {
       storage: diskStorage({
         destination: './uploads/logos',
         filename: (req, file, cb) => {
-          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const uniqueSuffix =
+            Date.now() + '-' + Math.round(Math.random() * 1e9);
           const ext = extname(file.originalname);
-          cb(null, `logo-${uniqueSuffix}${ext}`);
+          cb(null, `logo-\({uniqueSuffix}\){ext}`);
         },
       }),
       fileFilter: (req, file, cb) => {
@@ -100,6 +110,8 @@ export class CompaniesController {
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateDto: any,
+    @GetUser() user: any,
+    @Ip() ip: string,
     @UploadedFile() logoFile?: Express.Multer.File,
   ) {
     // Parse JSON fields from FormData
@@ -115,19 +127,27 @@ export class CompaniesController {
       color_primario: updateDto.color_primario || undefined,
       color_secundario: updateDto.color_secundario || undefined,
     };
-    return this.companiesService.update(id, parsedDto, logoFile);
+    return this.companiesService.update(id, parsedDto, logoFile, user, ip);
   }
 
   // Activar/Desactivar empresa
   @Patch(':id/toggle-status')
   @Auth(ValidRoles.super_user)
-  toggleCompanyStatus(@Param('id', ParseIntPipe) id: number) {
-    return this.companiesService.toggleCompanyStatus(id);
+  toggleCompanyStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @GetUser() user: any,
+    @Ip() ip: string,
+  ) {
+    return this.companiesService.toggleCompanyStatus(id, user, ip);
   }
 
   @Delete(':id')
   @Auth(ValidRoles.super_user)
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.companiesService.remove(id);
+  remove(
+    @Param('id', ParseIntPipe) id: number,
+    @GetUser() user: any,
+    @Ip() ip: string,
+  ) {
+    return this.companiesService.remove(id, user, ip);
   }
 }

@@ -1,6 +1,6 @@
-// src/auth/auth.service.ts
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -14,9 +14,6 @@ import bcrypt from 'bcrypt';
 import { ConfigService } from '@nestjs/config';
 import { LoginUserDTO } from './dto/login-user.dto';
 import { JwtService } from '@nestjs/jwt';
-import { Payload } from './interfaces/jwt-payload.interface';
-import { UpdateUserDTO } from './dto/update-user.dto';
-import { PaginationDto } from 'src/common/dto/pagination.dto';
 import { NotificationsService } from 'src/notifications/notifications.service';
 import { randomBytes } from 'crypto';
 import { AuditService } from '../audit/audit.service';
@@ -70,19 +67,43 @@ export class AuthService {
 
       const isSuperUser = creator?.roles?.includes('super_user' as any);
       const isAdmin = creator?.roles?.includes('admin' as any);
+      const isSubAdmin = creator?.roles?.includes('sub_admin' as any);
 
-      // CASO 1: Auto-registro público
       let finalRoles: any = ['user'];
       let targetCompanyId: number | null = null;
 
       if (isSuperUser) {
-        // CASO 2: Superusuario (asigna el rol y la empresa del formulario)
+        // 👑 CASO 1: Superusuario (asigna cualquier rol y la empresa del formulario)
         finalRoles = roles && roles.length > 0 ? roles : ['user'];
         targetCompanyId = company_id ? Number(company_id) : null;
       } else if (isAdmin) {
-        // CASO 3: Admin (asigna rol user y la empresa a la que pertenece el admin)
+        // 🏢 CASO 2: Admin (SOLO puede crear 'user' o 'sub_admin')
+        const requestedRole = Array.isArray(roles) ? roles[0] : roles;
+
+        if (requestedRole === 'admin' || requestedRole === 'super_user') {
+          throw new ForbiddenException(
+            'No tiene permisos para crear usuarios con rol Administrador o Superusuario.',
+          );
+        }
+
+        finalRoles = requestedRole === 'sub_admin' ? ['sub_admin'] : ['user'];
+        targetCompanyId = creator?.company?.id || null;
+      } else if (isSubAdmin) {
+        // 👥 CASO 3: Subadmin (SOLO puede crear clientes 'user')
+        const requestedRole = Array.isArray(roles) ? roles[0] : roles;
+
+        if (requestedRole && requestedRole !== 'user') {
+          throw new ForbiddenException(
+            'Un Subadministrador únicamente puede registrar clientes.',
+          );
+        }
+
         finalRoles = ['user'];
         targetCompanyId = creator?.company?.id || null;
+      } else {
+        // 👤 CASO 4: Registro público / anónimo
+        finalRoles = ['user'];
+        targetCompanyId = company_id ? Number(company_id) : null;
       }
 
       const userDataToCreate: any = {
@@ -116,6 +137,7 @@ export class AuthService {
           documento: savedUser.documento,
           roles: finalRoles,
           company_id: targetCompanyId,
+          created_by: creator ? creator.id : null,
         },
       });
 
@@ -131,10 +153,11 @@ export class AuthService {
       this.handlerErrors(error);
     }
   }
-
+  
   async loginUser(loginUserDTO: LoginUserDTO) {
     const { email, user_password } = loginUserDTO;
 
+    // Se solicita explícitamente user_password en el select para que bcrypt no reciba undefined
     const user = await this.UsersRepository.findOne({
       select: {
         id: true,
@@ -145,8 +168,10 @@ export class AuthService {
         direccion: true,
         ciudad: true,
         roles: true,
+        created_by: true as any,
       },
       where: { email },
+      relations: ['company'],
     });
 
     if (!user)
@@ -156,18 +181,24 @@ export class AuthService {
 
     if (!passOrNotPass) throw new UnauthorizedException(`Password not valid`);
 
+    // Payload completo con empresa y creador para el aislamiento de consultas
     const payload = {
       id: user.id,
       email: user.email,
       roles: user.roles,
+      company_id: user.company?.id || null,
+      created_by: (user as any).created_by || null,
     };
 
     return {
       Details: {
         Mesagge: 'Inicio de sesion exitoso!!',
         UserDetails: {
+          id: user.id,
           name: user.user_name,
-          email,
+          email: user.email,
+          roles: user.roles,
+          company_id: user.company?.id || null,
         },
       },
       token: this.jwtService.sign(payload),
@@ -183,40 +214,57 @@ export class AuthService {
       skip?: number;
       company_id?: number;
     },
-    requesterCompanyId?: number,
+    currentUser?: any,
   ) {
     const { user_name, email, documento, limit, skip, company_id } = params;
 
-    const whereConditions: any = {};
+    const query = this.UsersRepository.createQueryBuilder('user')
+      .leftJoinAndSelect('user.company', 'company')
+      .skip(skip || 0)
+      .take(limit || 100)
+      .orderBy('user.id', 'ASC');
 
     if (user_name && user_name.trim() !== '') {
-      whereConditions.user_name = ILike(`%${user_name}%`);
+      query.andWhere('user.user_name ILIKE :un', { un: `%${user_name}%` });
     }
 
     if (email && email.trim() !== '') {
-      whereConditions.email = ILike(`%${email}%`);
+      query.andWhere('user.email ILIKE :em', { em: `%${email}%` });
     }
 
     if (documento && documento.trim() !== '') {
-      whereConditions.documento = ILike(`%${documento}%`);
+      query.andWhere('user.documento ILIKE :doc', { doc: `%${documento}%` });
     }
 
-    if (company_id !== undefined) {
-      whereConditions.company = { id: company_id };
-    } else if (
-      requesterCompanyId !== undefined &&
-      requesterCompanyId !== null
-    ) {
-      whereConditions.company = { id: requesterCompanyId };
+    const isSuperUser = currentUser?.roles?.includes('super_user');
+    const isAdmin = currentUser?.roles?.includes('admin');
+    const isSubAdmin = currentUser?.roles?.includes('sub_admin');
+
+    if (isSuperUser) {
+      if (company_id) {
+        query.andWhere('company.id = :cid', { cid: company_id });
+      }
+    } else if (isAdmin) {
+      // Admin: ve los clientes y colaboradores creados por él o a sí mismo
+      query.andWhere(
+        '(user.id = :adminId OR user.created_by = :adminId)',
+        { adminId: currentUser.id },
+      );
+    } else if (isSubAdmin) {
+      // Sub-admin: ve clientes asociados a su admin creador o a sí mismo
+      const parentAdminId = currentUser.created_by?.id || currentUser.created_by;
+      query.andWhere(
+        '(user.created_by = :parentAdminId OR user.created_by = :subId OR user.id = :subId)',
+        { parentAdminId, subId: currentUser.id },
+      );
+    } else {
+      // Cliente normal: solo se ve a sí mismo
+      if (currentUser?.id) {
+        query.andWhere('user.id = :uid', { uid: currentUser.id });
+      }
     }
 
-    return this.UsersRepository.find({
-      where: whereConditions,
-      relations: ['company'],
-      order: { id: 'ASC' },
-      take: limit ?? undefined,
-      skip: skip ?? undefined,
-    });
+    return await query.getMany();
   }
 
   async findUserById(id: number) {
@@ -283,7 +331,6 @@ export class AuthService {
 
     if (!user) throw new NotFoundException('User not found');
 
-    // 📸 1. Snapshot del estado anterior (omitiendo contraseña)
     const { user_password: _pwd, ...previousSnapshot } = user as any;
 
     // Hasheo si cambia contraseña
@@ -298,12 +345,22 @@ export class AuthService {
       }
     }
 
-    // Asignación de empresa
+    // Regla de roles: un admin no puede ascender a nadie a admin o super_user
+    if (data && data.roles) {
+      const isSuperUser = currentUser?.roles?.includes('super_user');
+      if (!isSuperUser && (data.roles.includes('admin') || data.roles.includes('super_user'))) {
+        delete data.roles;
+      }
+    }
+
+    // Asignación de empresa (solo superusuario puede mover de empresa)
     if (data && 'company_id' in data) {
-      if (data.company_id !== null && data.company_id !== undefined) {
-        (user as any).company = { id: data.company_id };
-      } else {
-        (user as any).company = null;
+      if (currentUser?.roles?.includes('super_user')) {
+        if (data.company_id !== null && data.company_id !== undefined) {
+          (user as any).company = { id: data.company_id };
+        } else {
+          (user as any).company = null;
+        }
       }
       delete data.company_id;
     }
@@ -314,7 +371,7 @@ export class AuthService {
       const savedUser = await this.UsersRepository.save(user);
       const { user_password, ...rest } = savedUser as any;
 
-      // 📝 2. Log con el usuario autenticado que ejecutó la acción
+      // 📝 Registro de auditoría
       await this.auditService.recordLog({
         userId: currentUser?.id || currentUser?.id_user || null,
         userEmail:
@@ -335,10 +392,14 @@ export class AuthService {
     }
   }
 
-  /**
-   * Actualiza los roles de un usuario (solo super_user puede hacerlo)
-   */
   async updateUserRoles(userId: number, roles: string[], currentUser?: any) {
+    const isSuperUser = currentUser?.roles?.includes('super_user');
+    if (!isSuperUser) {
+      throw new ForbiddenException(
+        'Solo el Superusuario puede modificar directamente los roles asignados.',
+      );
+    }
+
     const user = await this.UsersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException(`User with id ${userId} not found`);
 
@@ -357,7 +418,6 @@ export class AuthService {
 
     const { user_password, ...rest } = user as any;
 
-    // 📝 Log con el usuario autenticado que cambió los roles
     await this.auditService.recordLog({
       userId: currentUser?.id || currentUser?.id_user || null,
       userEmail:
@@ -375,9 +435,6 @@ export class AuthService {
     };
   }
 
-  /**
-   * Solicita restablecimiento de contraseña - Genera token y envía email
-   */
   async requestPasswordReset(email: string) {
     const user = await this.UsersRepository.findOne({ where: { email } });
 
@@ -400,7 +457,7 @@ export class AuthService {
     await this.UsersRepository.save(user);
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
+    const resetLink = `\({frontendUrl}/reset-password?token=\){resetToken}`;
 
     try {
       await this.notificationsService.enviarEmailRestablecimiento(
@@ -427,9 +484,6 @@ export class AuthService {
     };
   }
 
-  /**
-   * Valida token y restablece la contraseña
-   */
   async resetPasswordWithToken(token: string, newPassword: string) {
     const user = await this.UsersRepository.findOne({
       where: {
@@ -477,9 +531,6 @@ export class AuthService {
     };
   }
 
-  /**
-   * Valida si un token de restablecimiento es válido (sin cambiar contraseña)
-   */
   async validateResetToken(token: string) {
     const user = await this.UsersRepository.findOne({
       where: {
@@ -516,9 +567,5 @@ export class AuthService {
     }
 
     throw new BadRequestException(error?.message || 'Unexpected error');
-  }
-
-  private2() {
-    return { ok: true };
   }
 }

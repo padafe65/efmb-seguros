@@ -23,7 +23,6 @@ export class AuditService {
     ipAddress?: string | null;
   }) {
     try {
-      // 1. Instanciamos directamente la entidad para evitar el fallo de sobrecarga en .create()
       const log = new AuditLog();
 
       log.action = data.action;
@@ -33,7 +32,6 @@ export class AuditService {
       log.entityId = data.entityId ? String(data.entityId) : undefined;
       log.ipAddress = data.ipAddress || '127.0.0.1';
 
-      // 2. MySQL type: 'json' requiere un objeto JS o un JSON válido
       log.previousData =
         data.previousData !== undefined && data.previousData !== null
           ? data.previousData
@@ -44,23 +42,49 @@ export class AuditService {
           ? data.newData
           : undefined;
 
-      // 3. Guardar en base de datos
       await this.auditLogRepository.save(log);
 
       this.logger.log(
-        `Auditoría registrada: [${data.action}] ${data.entity} (ID: ${log.entityId || 'N/A'}) por ${log.userEmail}`,
+        `Auditoría registrada: [\({data.action}]\){data.entity} (ID: \({log.entityId || 'N/A'}) por\){log.userEmail}`,
       );
     } catch (error) {
       this.logger.error('Error al guardar log de auditoría:', error);
     }
   }
 
-  async findAll(limit = 100) {
-    return await this.auditLogRepository.find({
-      order: {
-        id: 'DESC', // Los cambios más recientes siempre primero
-      },
-      take: limit,
-    });
+  async findAll(user: any, limit = 100) {
+    const isSuperUser = user?.roles?.includes('super_user');
+    const userCompanyId = user?.company?.id || user?.company_id;
+
+    // Si es super_user, devuelve los logs globales sin restricción
+    if (isSuperUser) {
+      return await this.auditLogRepository.find({
+        order: { id: 'DESC' },
+        take: limit,
+      });
+    }
+
+    // Si es admin, filtra exclusivamente eventos de su empresa
+    const qb = this.auditLogRepository
+      .createQueryBuilder('audit')
+      .orderBy('audit.id', 'DESC')
+      .take(limit);
+
+    if (userCompanyId) {
+      qb.where(
+        `(
+          JSON_UNQUOTE(JSON_EXTRACT(audit.newData, '$.company_id')) = :compId OR
+          JSON_UNQUOTE(JSON_EXTRACT(audit.newData, '$.company.id')) = :compId OR
+          JSON_UNQUOTE(JSON_EXTRACT(audit.previousData, '$.company_id')) = :compId OR
+          JSON_UNQUOTE(JSON_EXTRACT(audit.previousData, '$.company.id')) = :compId OR
+          audit.userId = :userId
+        )`,
+        { compId: String(userCompanyId), userId: user.id },
+      );
+    } else {
+      qb.where('audit.userId = :userId', { userId: user.id });
+    }
+
+    return await qb.getMany();
   }
 }

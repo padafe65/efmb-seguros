@@ -8,6 +8,7 @@ import {
   Param,
   ParseIntPipe,
   UseGuards,
+  Ip,
 } from '@nestjs/common';
 import { ContactService } from './contact.service';
 import { CreateContactMessageDto } from './dto/create-contact-message.dto';
@@ -27,12 +28,18 @@ export class ContactController {
   @UseGuards(OptionalJwtAuthGuard)
   async sendMessage(
     @Body() createDto: CreateContactMessageDto,
+    @Ip() ip: string,
     @GetUserOptional() user?: any,
   ) {
     // Si el usuario está logueado, usar su company_id
     const userCompanyId = user?.company?.id || user?.company_id || undefined;
     const userId = user?.id || createDto.user_id || undefined;
-    return this.contactService.createMessage(createDto, userCompanyId, userId);
+    return this.contactService.createMessage(
+      createDto,
+      userCompanyId,
+      userId,
+      ip,
+    );
   }
 
   // Endpoint para que los usuarios vean sus propios mensajes
@@ -52,15 +59,19 @@ export class ContactController {
     // Super_user ve todos, admin ve su empresa, sub_admin solo ve mensajes de usuarios que creó
     const isSuperUser = user.roles?.includes('super_user');
     const isSubAdmin = user.roles?.includes('sub_admin');
-    
+
     const requesterCompanyId = isSuperUser
       ? undefined
-      : (user.company?.id || user.company_id);
-    
+      : user.company?.id || user.company_id;
+
     const requesterId = isSubAdmin ? user.id : undefined;
     const requesterRoles = user.roles;
-    
-    return this.contactService.findAll(requesterCompanyId, requesterId, requesterRoles);
+
+    return this.contactService.findAll(
+      requesterCompanyId,
+      requesterId,
+      requesterRoles,
+    );
   }
 
   @Get('messages/:id')
@@ -81,13 +92,24 @@ export class ContactController {
     @Param('id', ParseIntPipe) id: number,
     @Body() respondDto: RespondMessageDto,
     @GetUser() user: any,
+    @Ip() ip: string,
   ) {
-    return this.contactService.respondToMessage(id, respondDto, user.id);
+    return this.contactService.respondToMessage(
+      id,
+      respondDto,
+      user.id,
+      user,
+      ip,
+    );
   }
 
   @Delete('messages/:id')
   @Auth(ValidRoles.admin, ValidRoles.super_user, ValidRoles.sub_admin)
-  async deleteMessage(@Param('id', ParseIntPipe) id: number) {
-    return this.contactService.deleteMessage(id);
+  async deleteMessage(
+    @Param('id', ParseIntPipe) id: number,
+    @GetUser() user: any,
+    @Ip() ip: string,
+  ) {
+    return this.contactService.deleteMessage(id, user, ip);
   }
 }
