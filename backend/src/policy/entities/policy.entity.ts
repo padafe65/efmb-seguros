@@ -23,6 +23,18 @@ export class PolicyEntity {
   @JoinColumn({ name: 'user_id' })
   user: UsersEntity;
 
+  // ---------- Creador de la póliza (Llave Foránea) ----------
+  @Column({ name: 'created_by', type: 'int', nullable: true })
+  created_by: number | null;
+
+  @ManyToOne(() => UsersEntity, {
+    nullable: true,
+    eager: false,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'created_by' })
+  creator: UsersEntity | null;
+
   // ---------- Campos generales ----------
   @Column('text', { nullable: false })
   tipo_poliza: string;
@@ -89,10 +101,7 @@ export class PolicyEntity {
   notificada: boolean;
 
   // Relación con empresa/aseguradora
-  // Temporalmente nullable hasta ejecutar el script SQL de migración
   @ManyToOne(() => CompanyEntity, { nullable: true, eager: false })
   @JoinColumn({ name: 'company_id' })
   company?: CompanyEntity;
-
-  // puedes agregar otros campos vehiculares que mencionaste...
 }

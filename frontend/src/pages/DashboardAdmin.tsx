@@ -145,6 +145,46 @@ useEffect(() => {
 
   };
 
+const handleOpenAnalytics = () => {
+  const token = localStorage.getItem("token");
+  let rol = localStorage.getItem("rol") || "";
+  let userId = localStorage.getItem("userId") || "";
+  let userName = localStorage.getItem("user_name") || "";
+  let companyId = localStorage.getItem("company_id") || "";
+
+  // Si los datos vienen dentro del token JWT, se extraen automáticamente:
+  if (token) {
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      rol = rol || payload.roles?.[0] || payload.rol || "";
+      userId = userId || payload.id || payload.sub || "";
+      userName = userName || payload.user_name || payload.nombre || "Usuario";
+      companyId = companyId || payload.company_id || payload.company?.id || "";
+    } catch (err) {
+      console.error("Error al decodificar token:", err);
+    }
+  }
+
+  // Se abre la analítica pasando los parámetros reales y limpios:
+  const url =
+    "http://localhost:8501/?rol=" + encodeURIComponent(rol) +
+    "&user_id=" + encodeURIComponent(userId) +
+    "&user_name=" + encodeURIComponent(userName) +
+    "&company_id=" + encodeURIComponent(companyId);
+
+  window.open(url, "_blank");
+};
+
+  const adminButtons = [
+    { label: "Refrescar Usuarios", onClick: loadUsers },
+    { label: "Crear Usuario", onClick: () => navigate("/admin/users/create") },
+    { label: "Crear Póliza", onClick: () => navigate("/admin/policies/create") },
+    { label: "Registro de Auditoría", onClick: () => setActiveTab("audit") },
+    { label: "Panel General", onClick: () => setActiveTab("general") },
+    { label: "Abrir Analítica", onClick: handleOpenAnalytics },
+    { label: "Cerrar Sesión", onClick: () => logout(navigate), isSecondary: true },
+  ];
+
 
     return (
       <div className="admin-container" style={{ padding: 24 }}>
@@ -153,16 +193,15 @@ useEffect(() => {
         </div>
         
         <div className="admin-actions" style={{ display: "flex", gap: 12, marginBottom: 12 }}>
-          <button className="admin-btn" onClick={loadUsers}>Refrescar Usuarios</button>
-          <button className="admin-btn" onClick={() => navigate("/admin/users/create")}>Crear Usuario</button>
-          <button className="admin-btn" onClick={() => navigate("/admin/policies/create")}>Crear Póliza</button>
-          <button className="admin-btn" onClick={() => setActiveTab("audit")}>
-            Registro de Auditoría
-          </button>
-          <button className="admin-btn" onClick={() => setActiveTab("general")}>
-            Panel General
-          </button>
-          <button className="admin-btn secondary" onClick={() => logout(navigate)}>Cerrar Sesión</button>
+          {adminButtons.map((btn, index) => (
+            <button
+              key={index}
+              className={`admin-btn ${btn.isSecondary ? "secondary" : ""}`}
+              onClick={btn.onClick}
+            >
+              {btn.label}
+            </button>
+          ))}
         </div>
 
         {activeTab === "audit" ? (

@@ -411,6 +411,32 @@ const [activeTab, setActiveTab] = useState<"users" | "policies" | "stats" | "com
     };
   };
 
+  const handleOpenAnalytics = () => {
+    const token = localStorage.getItem("token");
+    let rol = localStorage.getItem("rol") || "super_user";
+    let userId = localStorage.getItem("userId") || "";
+    let userName = localStorage.getItem("user_name") || "Super Usuario";
+
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        rol = payload.roles?.[0] || payload.rol || rol;
+        userId = payload.id || payload.sub || userId;
+        userName = payload.user_name || payload.nombre || userName;
+      } catch (err) {
+        console.error("Error al decodificar token:", err);
+      }
+    }
+
+    const url =
+      "http://localhost:8501/?rol=" + encodeURIComponent(rol) +
+      "&user_id=" + encodeURIComponent(userId) +
+      "&user_name=" + encodeURIComponent(userName) +
+      "&company_id="; // Vacío para que consulte el consolidado global de empresas
+
+    window.open(url, "_blank");
+  };
+
   const stats = getStats();
 
   return (
@@ -432,6 +458,11 @@ const [activeTab, setActiveTab] = useState<"users" | "policies" | "stats" | "com
         <button className="admin-btn" onClick={() => setActiveTab("stats")}>
           📊 Estadísticas
         </button>
+
+        <button className="admin-btn" onClick={handleOpenAnalytics}>
+          📈 Abrir Analítica
+        </button>
+
         <button className="admin-btn" onClick={() => setActiveTab("companies")}>
           🏢 Empresas
         </button>

@@ -1,0 +1,39 @@
+# ==========================================
+# 1. Ignorar archivos sueltos de la raíz
+# ==========================================
+/*.*
+/*.md
+/*.sql
+
+# Excepción: Conservar y permitir subir la base de datos principal
+!/efmbseguros.sql
+
+# Excepción: Mantener archivos clave de configuración del repositorio
+!/.gitignore
+!/package.json
+!/package-lock.json
+
+# ==========================================
+# 2. Ignorar carpetas no deseadas en la raíz
+# ==========================================
+/.agents/
+/.vscode/
+/node_modules/
+
+# ==========================================
+# 3. Reglas para Analytics (Python / Streamlit)
+# ==========================================
+analytics/.venv/
+analytics/venv/
+analytics/.env
+analytics/__pycache__/
+*.pyc
+
+# ==========================================
+# 4. Reglas globales de seguridad y temporales
+# ==========================================
+.env
+.env.*
+node_modules/
+dist/
+*.log

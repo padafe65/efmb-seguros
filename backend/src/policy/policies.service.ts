@@ -32,10 +32,10 @@ export class PoliciesService {
 
     private readonly whatsappService: WhatsappService,
 
-    private readonly auditService: AuditService, // Inyección de auditoría
+    private readonly auditService: AuditService,
   ) {}
 
-  @Cron('0 8 * * *') // todos los días 8am
+  @Cron('0 8 * * *')
   async verificarPolizasPorVencer() {
     this.logger.log('🕐 Verificando pólizas por vencer');
 
@@ -61,11 +61,10 @@ export class PoliciesService {
   async enviarAvisos(policy: PolicyEntity) {
     const mensaje = `
 Hola ${policy.user.user_name},
-Tu póliza ${policy.policy_number} vence el ${policy.fin_vigencia}.
+Tu póliza \({policy.policy_number} vence el\){policy.fin_vigencia}.
 Comunícate con Seguros MAB para renovarla.
 `;
 
-    // 📧 Email usuario
     try {
       if (policy.user.email) {
         await this.notificationsService.enviarCorreo(
@@ -80,7 +79,6 @@ Comunícate con Seguros MAB para renovarla.
       );
     }
 
-    // 📧 Email admin
     try {
       if (process.env.ADMIN_EMAIL) {
         await this.notificationsService.enviarCorreo(
@@ -92,7 +90,6 @@ Comunícate con Seguros MAB para renovarla.
       this.logger.error('❌ Error enviando email al admin', error);
     }
 
-    // 📲 WhatsApp usuario
     try {
       if (policy.user.telefono) {
         await this.whatsappService.enviar(policy.user.telefono, mensaje);
@@ -104,7 +101,6 @@ Comunícate con Seguros MAB para renovarla.
       );
     }
 
-    // 📲 WhatsApp admin
     try {
       if (process.env.ADMIN_PHONE) {
         await this.whatsappService.enviar(process.env.ADMIN_PHONE, mensaje);
@@ -113,7 +109,6 @@ Comunícate con Seguros MAB para renovarla.
       this.logger.error('❌ Error WhatsApp admin', error);
     }
 
-    // 🔐 Marcar como notificada SOLO si pasó por aquí
     policy.notificada = true;
     await this.policyRepository.save(policy);
   }
@@ -138,12 +133,14 @@ Comunícate con Seguros MAB para renovarla.
       const fin = addYears(inicio, 1);
 
       const companyId = creatorCompanyId || user.company?.id;
+      const creatorId = currentUser?.id || currentUser?.id_user || null;
 
       const policyData: any = {
         ...rest,
         inicio_vigencia: inicio,
         fin_vigencia: fin,
         user,
+        created_by: creatorId, // 👈 Asignación de la llave foránea
       };
 
       if (companyId) {
@@ -165,12 +162,12 @@ Comunícate con Seguros MAB para renovarla.
         inicio_vigencia: saved.inicio_vigencia,
         fin_vigencia: saved.fin_vigencia,
         user_id: user.id,
+        created_by: creatorId,
         company_id: companyId || null,
       };
 
-      // 📝 Auditoría: Creación
       await this.auditService.recordLog({
-        userId: currentUser?.id || currentUser?.id_user || null,
+        userId: creatorId,
         userEmail:
           currentUser?.email || currentUser?.user_name || 'Super Usuario',
         action: 'CREATE',
@@ -178,7 +175,7 @@ Comunícate con Seguros MAB para renovarla.
         entityId: String(saved.id_policy),
         previousData: null,
         newData: createdSnapshot,
-        ipAddress: clientIp || null, // 👈 Se asigna la IP
+        ipAddress: clientIp || null,
       });
 
       return {
@@ -207,6 +204,7 @@ Comunícate con Seguros MAB para renovarla.
       const query = this.policyRepository
         .createQueryBuilder('policy')
         .leftJoinAndSelect('policy.user', 'user')
+        .leftJoinAndSelect('policy.creator', 'creator')
         .leftJoinAndSelect('policy.company', 'company')
         .skip(skip || 0)
         .take(limit || 100);
@@ -215,14 +213,15 @@ Comunícate con Seguros MAB para renovarla.
         query.andWhere('user.id = :uid', { uid: Number(userId) });
       }
 
+      // Reemplazo de ILIKE por LIKE para compatibilidad MariaDB
       if (policyNumber) {
-        query.andWhere('policy.policy_number ILIKE :pn', {
+        query.andWhere('policy.policy_number LIKE :pn', {
           pn: `%${policyNumber}%`,
         });
       }
 
       if (placa) {
-        query.andWhere('policy.placa ILIKE :pl', { pl: `%${placa}%` });
+        query.andWhere('policy.placa LIKE :pl', { pl: `%${placa}%` });
       }
 
       const filterCompanyId =
@@ -245,7 +244,7 @@ Comunícate con Seguros MAB para renovarla.
   async findOne(id_policy: number) {
     const policy = await this.policyRepository.findOne({
       where: { id_policy },
-      relations: ['user', 'company'],
+      relations: ['user', 'creator', 'company'],
     });
 
     if (!policy)
@@ -265,7 +264,7 @@ Comunícate con Seguros MAB para renovarla.
 
     return await this.policyRepository.find({
       where: whereConditions,
-      relations: ['user', 'company'],
+      relations: ['user', 'creator', 'company'],
     });
   }
 
@@ -279,7 +278,6 @@ Comunícate con Seguros MAB para renovarla.
     try {
       const currentPolicy = await this.findOne(id_policy);
 
-      // Snapshot plano del estado anterior (sin relaciones anidadas complejas)
       const previousSnapshot = {
         policy_number: currentPolicy.policy_number,
         tipo_poliza: currentPolicy.tipo_poliza,
@@ -292,6 +290,7 @@ Comunícate con Seguros MAB para renovarla.
         inicio_vigencia: currentPolicy.inicio_vigencia,
         fin_vigencia: currentPolicy.fin_vigencia,
         user_id: currentPolicy.user?.id || null,
+        created_by: currentPolicy.created_by || null,
         company_id: currentPolicy.company?.id || null,
       };
 
@@ -334,10 +333,8 @@ Comunícate con Seguros MAB para renovarla.
 
       await this.policyRepository.save(policyToSave);
 
-      // Reconsultamos para obtener el estado persistido definitivo
       const updatedPolicy = await this.findOne(id_policy);
 
-      // Snapshot plano del nuevo estado
       const newSnapshot = {
         policy_number: updatedPolicy.policy_number,
         tipo_poliza: updatedPolicy.tipo_poliza,
@@ -350,10 +347,10 @@ Comunícate con Seguros MAB para renovarla.
         inicio_vigencia: updatedPolicy.inicio_vigencia,
         fin_vigencia: updatedPolicy.fin_vigencia,
         user_id: updatedPolicy.user?.id || null,
+        created_by: updatedPolicy.created_by || null,
         company_id: updatedPolicy.company?.id || null,
       };
 
-      // 📝 Registro de auditoría: MODIFICACIÓN
       await this.auditService.recordLog({
         userId: currentUser?.id || currentUser?.id_user || null,
         userEmail:
@@ -363,7 +360,7 @@ Comunícate con Seguros MAB para renovarla.
         entityId: String(id_policy),
         previousData: previousSnapshot,
         newData: newSnapshot,
-        ipAddress: clientIp || null, // 👈 Se guarda la IP
+        ipAddress: clientIp || null,
       });
 
       return { message: 'Policy updated!', policy: updatedPolicy };
@@ -390,12 +387,12 @@ Comunícate con Seguros MAB para renovarla.
         inicio_vigencia: currentPolicy.inicio_vigencia,
         fin_vigencia: currentPolicy.fin_vigencia,
         user_id: currentPolicy.user?.id || null,
+        created_by: currentPolicy.created_by || null,
         company_id: currentPolicy.company?.id || null,
       };
 
       await this.policyRepository.delete({ id_policy });
 
-      // 📝 Auditoría: Eliminación
       await this.auditService.recordLog({
         userId: currentUser?.id || currentUser?.id_user || null,
         userEmail:
@@ -405,7 +402,7 @@ Comunícate con Seguros MAB para renovarla.
         entityId: String(id_policy),
         previousData: previousSnapshot,
         newData: null,
-        ipAddress: clientIp || null, // 👈 Se asigna la IP
+        ipAddress: clientIp || null,
       });
 
       return `Policy with id ${id_policy} was deleted`;
@@ -413,6 +410,7 @@ Comunícate con Seguros MAB para renovarla.
       this.handlerErrors(error);
     }
   }
+
   private handlerErrors(error: any) {
     this.logger.error(error);
     throw new BadRequestException(error?.message || 'Unexpected error');

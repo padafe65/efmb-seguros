@@ -153,7 +153,7 @@ export class AuthService {
       this.handlerErrors(error);
     }
   }
-  
+
   async loginUser(loginUserDTO: LoginUserDTO) {
     const { email, user_password } = loginUserDTO;
 
@@ -246,13 +246,13 @@ export class AuthService {
       }
     } else if (isAdmin) {
       // Admin: ve los clientes y colaboradores creados por él o a sí mismo
-      query.andWhere(
-        '(user.id = :adminId OR user.created_by = :adminId)',
-        { adminId: currentUser.id },
-      );
+      query.andWhere('(user.id = :adminId OR user.created_by = :adminId)', {
+        adminId: currentUser.id,
+      });
     } else if (isSubAdmin) {
       // Sub-admin: ve clientes asociados a su admin creador o a sí mismo
-      const parentAdminId = currentUser.created_by?.id || currentUser.created_by;
+      const parentAdminId =
+        currentUser.created_by?.id || currentUser.created_by;
       query.andWhere(
         '(user.created_by = :parentAdminId OR user.created_by = :subId OR user.id = :subId)',
         { parentAdminId, subId: currentUser.id },
@@ -348,7 +348,10 @@ export class AuthService {
     // Regla de roles: un admin no puede ascender a nadie a admin o super_user
     if (data && data.roles) {
       const isSuperUser = currentUser?.roles?.includes('super_user');
-      if (!isSuperUser && (data.roles.includes('admin') || data.roles.includes('super_user'))) {
+      if (
+        !isSuperUser &&
+        (data.roles.includes('admin') || data.roles.includes('super_user'))
+      ) {
         delete data.roles;
       }
     }
